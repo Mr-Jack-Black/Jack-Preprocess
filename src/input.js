@@ -9,6 +9,11 @@
 //   /debug KEY=VALUE   → define KEY with VALUE
 //   /debug KEY=null    → undefine KEY
 function JackCmdCheck(text) {
+
+    // Avoid executing commands from intro texts.
+    if (info.actionCount < 2) return text;
+
+    // Case insensitive
     let lower = text.toLowerCase();
 
     // Do not process commands within SYSTEM messages.
@@ -42,8 +47,8 @@ function JackCmdCheck(text) {
         }
     }
 
-    // Remove any " /debug ..." part and return cleaned text
-    return text.replace(/ \/debug.*$/i, '').trim();
+    // Return same input, after removing commands
+    return text.split(/\/debug /i)[0].trim();
 }
 
 // === INPUT-hook (data from user input) ===
