@@ -4,15 +4,17 @@
 // === Adds debug message (if debug enabled) ===
 function JackAddDebugInfo(text) {
   if (state.deepDebugMode) {
-    text += "\n<SYSTEM>\nTurn = " + info.actionCount +
+    text += "\n<SYSTEM>\ninfo.actionCount = " + info.actionCount +
             state.debugOutput +
             "Defines: \n" + JackDumpDefs(state.JackDefsMap) +
+            JackAiQuestionsDump() +
             "\nCONTEXT_HOOK:\n" + state.lastContext + "\n</SYSTEM>\n";
   } else if (state.debugMode) {
-    text += "\n<SYSTEM>\nTurn = " + info.actionCount +
+    text += "\n<SYSTEM>\ninfo.actionCount = " + info.actionCount +
             state.debugOutput +
-            "Defines: \n" + JackDumpDefs(state.JackDefsMap) +
-            "\n</SYSTEM>\n";
+            "Defines:\n" + JackDumpDefs(state.JackDefsMap) +
+            JackAiQuestionsDump() +
+            "</SYSTEM>\n";
   }
 
   return text;
@@ -21,10 +23,13 @@ function JackAddDebugInfo(text) {
 // === OUTPUT-hook (data sent to user output) ===
 const modifier = (text) => {
   
-  // Print debug info if enabled
+  // Needed to support #ASK and #REFRESH directives
+  text = JackCatchAiAnswer(text);
+
+  // Print debug info if enabled (optional)
   text = JackAddDebugInfo(text);
   
-  // Store output (not used by Jack)
+  // Store output
   state.lastOutput = text;
   
   // Your other output modifier scripts go here (alternative)
