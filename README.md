@@ -12,7 +12,7 @@ It works like a simplified C preprocessor and lets you:
 * Evaluate simple arithmetic (`#define COUNTER {COUNTER} + 1`)
 * Predefines `TURN` that is incremented automatically
 * Content of define `WHAT_NEXT` get added after user input
-* Uses `COOLDOWN` to track time until next AI question is allowed.
+* Uses `COOLDOWN` to track time until next AI question is allowed (this can be updated)
 
 It is intended to run for text in **context-hook**, so it processes everything in the AI context before it is sent to the model:
 
@@ -70,16 +70,13 @@ The format is:
 Examples:
 
 ```
-#ask DANGER "Are there zombies nearby?" (none)
-#if DANGER
+#ask DANGER "Are there zombies nearby?"
+#ifdef DANGER
 The survivors prepare for a fight.
 #endif
 
 #ask ENEMY_COUNT "How many enemies are in sight?" (int)
 There are {ENEMY_COUNT} foes.
-
-#ask LOCATION "Where are we currently located?" (string)
-The group is in {LOCATION}.
 ```
 
 ### `#refresh`
@@ -91,10 +88,8 @@ Example:
 
 ```
 #ask WEATHER "What is the weather like?" (string)
-It is {WEATHER} today.
-
 #refresh WEATHER
-#ask WEATHER "Has the weather changed?" (string)
+It is {WEATHER} today.
 ```
 
 ---
