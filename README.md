@@ -10,7 +10,7 @@ It works like a simplified C preprocessor and lets you:
 * Substitute macros (`{KEY}` → value)
 * Evaluate simple arithmetic (`#define COUNTER {COUNTER} + 1`)
 * Predefines `TURN` that is incremented automatically
-* Content of define `WHATS_NEXT` get added after user input. 
+* Content of define `WHAT_NEXT` get added after user input. 
 
 It is intended to run for text in **context-hook**, so it processes everything in the AI context before it is sent to the model:
 
