@@ -1,155 +1,152 @@
-// === Global variables (preserve existing state values if present) ===
+// === Global variables ===
+
+// Not required by the library
 state.lastContext = state.lastContext || '';
 state.lastInput = state.lastInput || '';
 state.lastOutput = state.lastOutput || '';
-state.debugOutput = state.debugOutput || '';
 state.debugMode = state.debugMode || false;
 state.deepDebugMode = state.deepDebugMode || false;
+
+// Required variables
+state.debugOutput = state.debugOutput || '';
 state.JackDefsMap = state.JackDefsMap || { TURN: "-1" };
+// If you want empty Defs map use: Object.create(null);
 
-// === Preprocess input/output text ===
-function JackPreprocess(textInput) {
-  // Update TURN
-  state.JackDefsMap.TURN = String(parseInt(state.JackDefsMap.TURN) + 1);
+// === Preprocess context text ===
+// Performs C-preprocessor style processing for input text.
+//
+//   TURN define value is incremented every time.
+//   WHAT_NEXT define value gets added after user input.
+//
+//   input    Text to be processed
+//   return   Text after preprocessing
+function JackPreprocess(input) {
+  const lines = (input || "").split(/\r?\n/);
+  const authorsNote = "[Author's note:";
+  const out = [];
+  const active = [true];
 
-  let lines = textInput.split(/\r?\n/);
-  let output = [];
-  // stack: true = active, false = inactive
-  let activeStack = [true];
+  // Always increment TURN
+  let cur = parseInt(state.JackDefsMap.TURN, 10);
+  if (isNaN(cur)) cur = -1;
+  state.JackDefsMap.TURN = String(cur + 1);
 
+  // Parse input context
   for (let line of lines) {
-    let trimmed = line.trim();
-    // Non-directive line
-    if (!trimmed.startsWith("#")) {
-      if (activeStack[activeStack.length - 1]) {
-        output.push(JackApplyMacros(line));
-      }
+    let t = line;
+    
+    // Author's note can start a line
+    if (t.startsWith(authorsNote)) {
+      t = t.replace(authorsNote, '');
+    }
+
+    // Process lines that don't have directives
+    t = t.trim();
+    if (!t.startsWith("#")) {
+      if (active[active.length - 1]) out.push(JackApplyMacros(line));
       continue;
     }
 
-    // directive and rest-of-line
-    // directive includes the leading '#', e.g. '#if'
-    let parts = trimmed.split(/\s+/, 2);
-    let directive = parts[0];
-    let rest = trimmed.substring(directive.length).trim();
-
-    // whether the current outer block is active
-    let parentActive = activeStack[activeStack.length - 1];
-
+    // Process lines with directives
+    const [directive, ...restArr] = t.split(/\s+/);
+    const rest = restArr.join(" ");
+    const parent = active[active.length - 1];
+    
     switch (directive) {
       case "#define": {
-        // Only apply defines when in an active block
-        if (!parentActive) break;
-        // parse key and optional value from rest
-        let m = rest.match(/^([A-Za-z0-9_]+)(?:\s+(.*))?$/s);
+        if (!parent) break;
+        const m = rest.match(/^([A-Za-z0-9_]+)(?:\s+(.*))?$/);
         if (m) {
           let key = m[1];
-          let value = (typeof m[2] !== "undefined" && m[2] !== null) ? m[2] : (state.JackDefsMap[key] || "");
-          state.JackDefsMap[key] = value;
+          let val = m[2] ? JackEvalValue(m[2]) : (state.JackDefsMap[key] || "");
+          state.JackDefsMap[key] = val;
+          state.debugOutput += key + " <- " + val + "\n";
         }
         break;
       }
-
       case "#undef": {
-        // Only execute undef when in an active block
-        if (!parentActive) break;
-        let m = rest.match(/^([A-Za-z0-9_]+)\b/);
-        if (m) {
-          let key = m[1];
-          delete state.JackDefsMap[key];
-        }
+        if (!parent) break;
+        let key = rest.split(/\s+/)[0];
+        delete state.JackDefsMap[key];
+        state.debugOutput += key + " <- undefined\n";
         break;
       }
-
       case "#ifdef": {
-        // Only symbol name matters for #ifdef/#ifndef
-        let key = rest.split(/\s+/)[0] || "";
-        let cond = parentActive ? state.JackDefsMap.hasOwnProperty(key) : false;
-        // If parentActive is false, we still push false to keep nesting balanced
-        activeStack.push(parentActive && cond);
+        let key = rest.split(/\s+/)[0];
+        active.push(parent && state.JackDefsMap.hasOwnProperty(key));
         break;
       }
-
       case "#ifndef": {
-        let key = rest.split(/\s+/)[0] || "";
-        let cond = parentActive ? !state.JackDefsMap.hasOwnProperty(key) : false;
-        activeStack.push(parentActive && cond);
+        let key = rest.split(/\s+/)[0];
+        active.push(parent && !state.JackDefsMap.hasOwnProperty(key));
         break;
       }
-
       case "#if": {
-        // If parentActive is false, push false without evaluating
-        if (!parentActive) {
-          activeStack.push(false);
-        } else {
-          let expr = rest;
-          let cond = JackCheckCondition(expr, state.JackDefsMap);
-          activeStack.push(parentActive && !!cond);
+        active.push(parent && JackCheckCondition(rest));
+        break;
+      }
+      case "#else": {
+        if (active.length > 1) {
+          let prev = active.pop();
+          const prev_parent = active[active.length - 1];
+          active.push(prev_parent && !prev);
         }
         break;
       }
-
       case "#endif": {
-        // Pop if possible
-        if (activeStack.length > 1) activeStack.pop();
-        // Handle trailing text after #endif on same line:
-        // rest already contains trailing text (if any).
-        let newActive = activeStack[activeStack.length - 1];
-        if (newActive && rest) {
-          // If there is text after the directive on same line, include it
-          output.push(JackApplyMacros(rest));
-        }
+        if (active.length > 1) active.pop();
+        out.push(rest);
         break;
       }
-
-      default:
-        // Unknown directive: ignore. If in inactive block, also ignore.
-        break;
     }
   }
 
-  return output.join("\n");
+  // Append WHAT_NEXT if defined
+  if (state.JackDefsMap.hasOwnProperty("WHAT_NEXT")) {
+    out.push("[AI guidance for continuation: " + state.JackDefsMap.WHAT_NEXT + " ]");
+  }
+
+  return out.join("\n");
 }
 
 // === Macro substitution ===
-function JackApplyMacros(line) {
-  return line.replace(/\{([A-Za-z0-9_]+)\}/g, (match, key) => {
-    return state.JackDefsMap.hasOwnProperty(key) ? state.JackDefsMap[key] : match;
-  });
+// Expand {KEY} → value
+function JackApplyMacros(text) {
+  return String(text).replace(/\{([A-Za-z0-9_]+)\}/g, (m, k) =>
+    state.JackDefsMap.hasOwnProperty(k) ? state.JackDefsMap[k] : m
+  );
 }
 
 // === Condition evaluation ===
-function JackCheckCondition(condition, defs) {
+function JackCheckCondition(expr) {
   try {
-    // Replace defined identifiers with their values (word-boundary)
-    for (let key in defs) {
-      let val = defs[key];
-      condition = condition.replace(new RegExp("\\b" + key + "\\b", "g"), val);
+    expr = JackApplyMacros(expr);
+    for (let k in state.JackDefsMap) {
+      expr = expr.replace(new RegExp("\\b" + k + "\\b", "g"), state.JackDefsMap[k]);
     }
-    // Remove whitespace to simplify eval input
-    condition = condition.replace(/\s+/g, "");
-    return JackEvalBooleanExpr(condition);
-  } catch (e) {
-    state.debugOutput += "Error: " + e.message;
-    return false;
-  }
-}
-
-function JackEvalBooleanExpr(expr) {
-  try {
-    // Using JS eval for expression evaluation (comparisons, &&, ||, !, numbers)
     return !!eval(expr);
   } catch (e) {
-    state.debugOutput += "Eval error: " + e.message;
+    state.debugOutput += "Cond error: " + e.message + "\n";
     return false;
   }
 }
 
-// === Dump defines ===
+// === Try to evaluate arithmetic, fallback to string ===
+function JackEvalValue(val) {
+  let expanded = JackApplyMacros(val).trim();
+  try {
+    // allow only numbers and operators to be eval'd
+    if (/^[0-9+\-*/().\s]+$/.test(expanded)) {
+      let res = eval(expanded);
+      if (typeof res === "number" && !isNaN(res)) return String(res);
+    }
+  } catch (e) {}
+  return expanded;
+}
+
+// === Dump defines as text ===
 function JackDumpDefs() {
-  let pairs = [];
-  for (let key in state.JackDefsMap) {
-    pairs.push(key + "=" + state.JackDefsMap[key]);
-  }
-  return pairs.join(", ");
+  return Object.entries(state.JackDefsMap)
+    .map(([k, v]) => k + "=" + v)
+    .join(", ");
 }
