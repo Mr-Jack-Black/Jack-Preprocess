@@ -15,6 +15,15 @@ state.JackDefsMap = state.JackDefsMap || { TURN: "-1", DEBUG: "" }; // DEBUG pre
 state.JackAiQuestions = state.JackAiQuestions || {};
 state.JackAiQuestionID = state.JackAiQuestionID || "";
 state.lastAiAnswer = state.lastAiAnswer || '';
+state.JackAiAnswerChoices = state.JackAiAnswerChoices || "";
+
+// Provide INPUT and OUTPUT variables initialized from state
+state.JackDefsMap.INPUT = state.lastInput || '';
+state.JackDefsMap.OUTPUT = state.lastOutput || '';
+
+// Comment handling
+state.JackRemoveCommentedLines = state.JackRemoveCommentedLines || false;
+state.JackInBlockComment = state.JackInBlockComment || false;
 
 // === Expected type prompts ===
 const JACK_PROMPT_BOOL   = "Answer only with '0' for false/no or '1' for true/yes.";
@@ -33,7 +42,7 @@ function JackSetCooldown(n) {
 }
 
 // === Add or update a question ===
-function JackAddAiQuestion(ID, question, expect) {
+function JackAddAiQuestion(ID, question, expect, choices) {
   if (!state.JackAiQuestions[ID]) {
     state.JackAiQuestions[ID] = {
       question: question,
@@ -45,6 +54,9 @@ function JackAddAiQuestion(ID, question, expect) {
     state.JackAiQuestions[ID].question = question;
     state.JackAiQuestions[ID].expect = expect;
     state.JackAiQuestions[ID].ready = false;
+  }
+  if (choices) {
+    state.JackAiAnswerChoices = "[" + choices.join(",") + "]";
   }
 }
 
@@ -65,13 +77,26 @@ function JackAskAiQuestion(text) {
       let prompt = "";
       if (q.expect === "bool" || q.expect === "none") prompt = JACK_PROMPT_BOOL;
       else if (q.expect === "int") prompt = JACK_PROMPT_INT;
+      else if (q.expect === "name") prompt = "Answer only with a 1–2 word proper name (each word capitalized).";
+      else if (state.JackAiAnswerChoices) prompt = "Answer only with one of: " + state.JackAiAnswerChoices;
       else prompt = JACK_PROMPT_STRING;
+
       text += `\n<SYSTEM>Ignore all previous instructions and answer only the following question clearly and simply: ${q.question}. ${prompt}</SYSTEM>\n`;
       state.lastAiAnswer = "";
       return text; 
     }
   }
   return text;
+}
+
+// === Helper: check if text after answer is valid story ===
+function JackIsValidStoryText(txt) {
+  let t = txt.trim();
+  if (t.length < 100) return false;
+  if (/[(){}[\]/#&=><]/.test(t)) return false;
+  if (!/^[A-Z][a-z]/.test(t)) return false;
+  if (!/[.!?]$/.test(t)) return false;
+  return true;
 }
 
 // === Catch and process answer ===
@@ -97,16 +122,18 @@ function JackCatchAiAnswer(text) {
         else if (hasFalse && !hasTrue) { parsed = "0"; valid = true; }
       } else if (q.expect === "int") {
         let matches = ans.match(/[-+]?\d+/g);
-        if (matches && matches.length === 1) {
-          parsed = matches[0];
-          valid = true;
-        }
+        if (matches && matches.length === 1) { parsed = matches[0]; valid = true; }
       } else if (q.expect === "string") {
         let cleaned = ans.replace(/<[^>]*>/g, "").trim();
-        if (cleaned.length > 0) {
-          parsed = cleaned;
-          valid = true;
-        }
+        if (cleaned.length > 0) { parsed = cleaned; valid = true; }
+      } else if (q.expect === "name") {
+        let cleaned = ans.trim();
+        if (/^[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?$/.test(cleaned)) { parsed = cleaned; valid = true; }
+      }
+
+      if (state.JackAiAnswerChoices) {
+        let choices = state.JackAiAnswerChoices.slice(1,-1).split(",");
+        if (choices.includes(ans)) { parsed = ans; valid = true; }
       }
 
       if (valid) {
@@ -120,6 +147,13 @@ function JackCatchAiAnswer(text) {
           state.JackDefsMap[ID] = parsed;
         }
         state.debugOutput += ID + " <- " + parsed + " (from AI answer)\n";
+
+        // reset choices after use
+        state.JackAiAnswerChoices = "";
+
+        // attempt to extract story continuation after the answer
+        let after = state.lastAiAnswer.replace(parsed, "").trim();
+        if (JackIsValidStoryText(after)) return after;
       } else {
         state.debugOutput += "Invalid AI answer for ID=" + ID + " (" + q.expect + "): " + ans + "\n";
       }
@@ -150,6 +184,89 @@ function JackAiQuestionsDump() {
   return out;
 }
 
+// === Helper: evaluate special functions used in conditions or { ... } sequences ===
+function JackEvalSpecial(token) {
+  token = token.trim();
+
+  // REGEX(string, pattern)
+  let m = token.match(/^REGEX\s*\(([^,]+),\s*(.+)\)$/i);
+  if (m) {
+    let str = stripQuotes(JackApplyMacros(m[1].trim()));
+    let patternRaw = stripQuotes(JackApplyMacros(m[2].trim()));
+    try {
+      let re = new RegExp(patternRaw);
+      let match = str.match(re);
+      if (match) {
+        state.JackDefsMap.M1 = match[1] || "";
+        state.JackDefsMap.M2 = match[2] || "";
+        state.JackDefsMap.M3 = match[3] || "";
+        return "1";
+      } else {
+        state.JackDefsMap.M1 = state.JackDefsMap.M2 = state.JackDefsMap.M3 = "";
+        return "0";
+      }
+    } catch (e) {
+      state.debugOutput += "REGEX error: " + e.message + "\n";
+      return "0";
+    }
+  }
+
+  // INCLUDES(string, substring)
+  m = token.match(/^INCLUDES\s*\(([^,]+),\s*(.+)\)$/i);
+  if (m) {
+    let str = stripQuotes(JackApplyMacros(m[1].trim()));
+    let sub = stripQuotes(JackApplyMacros(m[2].trim()));
+    return str.indexOf(sub) !== -1 ? "1" : "0";
+  }
+
+  // P(15%) or P(0.15) or P({A})
+  m = token.match(/^P\s*\(([^)]+)\)$/i);
+  if (m) {
+    let arg = JackApplyMacros(m[1].trim());
+    arg = stripQuotes(arg);
+    if (/^(\d+)%$/.test(arg)) {
+      let pct = parseInt(RegExp.$1,10);
+      return (Math.random()*100 < pct) ? "1" : "0";
+    }
+    let num = parseFloat(arg);
+    if (!isNaN(num)) {
+      return (Math.random() < num) ? "1" : "0";
+    }
+    return "0";
+  }
+
+  // RND(min,max)
+  m = token.match(/^RND\s*\(([^,]+),\s*([^)]+)\)$/i);
+  if (m) {
+    let a = parseInt(JackApplyMacros(m[1].trim()),10);
+    let b = parseInt(JackApplyMacros(m[2].trim()),10);
+    if (isNaN(a) || isNaN(b)) return "";
+    if (a > b) { let t=a;a=b;b=t; }
+    return String(Math.floor(Math.random()*(b - a + 1)) + a);
+  }
+
+  // SELECT(N,[A,B,C])
+  m = token.match(/^SELECT\s*\(([^,]+),\s*\[(.*)\]\)$/i);
+  if (m) {
+    let idxRaw = JackApplyMacros(m[1].trim());
+    let idx = parseInt(idxRaw,10);
+    if (isNaN(idx)) return "";
+    let list = m[2].split(/,\s*/).map(x=>stripQuotes(JackApplyMacros(x.trim())));
+    if (list.length === 0) return "";
+    if (idx < 0 || idx >= list.length) return "";
+    return list[idx];
+  }
+
+  // simple numeric/string fallback
+  return token;
+}
+
+function stripQuotes(s) {
+  if (typeof s !== 'string') return s;
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) return s.slice(1,-1);
+  return s;
+}
+
 // === Preprocess context text ===
 function JackPreprocess(input) {
   const lines = (input || "").split(/\r?\n/);
@@ -172,8 +289,28 @@ function JackPreprocess(input) {
   }
 
   for (let line of lines) {
+
     let rawLine = line;
     let t = line;
+
+    // Handle block comments if enabled
+    if (state.JackRemoveCommentedLines) {
+      if (state.JackInBlockComment) {
+        if (t.includes("*/")) {
+          state.JackInBlockComment = false;
+        }
+        continue; // TODO: Not handling text after block comment end.
+      }
+      if (/^\s*\/\//.test(t)) continue; // skip single line comment
+      if (/^\s*\/\*/.test(t)) {
+        if (!t.includes("*/")) {
+          state.JackInBlockComment = true;
+          continue;
+        } else {
+          continue; // skip /* ... */ single-line block
+        }
+      }
+    }
 
     let authorsMatch = rawLine.match(authorsNotePattern);
     let authorsPrefix = authorsMatch ? authorsMatch[0] : null;
@@ -191,13 +328,35 @@ function JackPreprocess(input) {
     const parent = active[active.length - 1];
 
     switch (directive) {
+      case "#begin": {
+        state.JackRemoveCommentedLines = true;
+        state.JackInBlockComment = false;
+        break;
+      }
+      case "#end": {
+        state.JackRemoveCommentedLines = false;
+        state.JackInBlockComment = false;
+        break;
+      }
       case "#define":
       case "#set": {
         if (!parent) break;
-        const m = rest.match(/^([A-Za-z0-9_]+)(?:\s+(.*))?$/);
+        const m = rest.match(/^([A-Za-z0-9_]+)(?:\s+(.*))?$/s);
         if (m) {
           let key = m[1];
-          let val = m[2] ? JackEvalValue(m[2]) : (state.JackDefsMap[key] || "");
+          /*let rawVal = m[2] || "";
+          let val = "";
+          // support quoted values with single or double quotes (keep internal spaces)
+          let q = rawVal.trim();
+          if ((q.startsWith("'") && q.endsWith("'")) || (q.startsWith('"') && q.endsWith('"'))) {
+            val = q.slice(1,-1);
+          } else if (q === "") {
+            val = state.JackDefsMap[key] || "";
+          } else {
+            val = JackEvalValue(rawVal);
+          }*/
+          let val = m[2] || "";
+          val = stripQuotes(JackEvalValue(val.trim()));
           state.JackDefsMap[key] = val;
           state.debugOutput += key + " <- " + val + "\n";
         }
@@ -248,15 +407,21 @@ function JackPreprocess(input) {
       case "#ask":
       case "#asking": {
         if (!parent) break;
-        const m = rest.match(/^([A-Za-z0-9_]+)\s+"([^"]+)"(?:\s+\((\w+)\))?/);
+        let m = rest.match(/^([A-Za-z0-9_]+)\s+"([^"]+)"(?:\s+\(([^)]+)\))?/);
         if (m) {
           let key = m[1], question = m[2], expect = m[3] ? m[3].toLowerCase() : null;
+          let choices = null;
+          let cm = rest.match(/list=\[([^\]]+)\]/i);
+          if (cm) {
+            choices = cm[1].split(/\s*,\s*/);
+            expect = "string";
+          }
           if (!expect) {
             if (/^\s*(is|are|was|were|do|does|did|has|have|had|can|could|will|would|should|may|might|shall|am)\b/i.test(question) || /\bor\b/i.test(question)) expect = "none";
             else expect = "string";
           }
-          if (!["bool","int","string","none"].includes(expect)) expect = "string";
-          if (!(expect === "none" && state.JackDefsMap.hasOwnProperty(key))) JackAddAiQuestion(key, question, expect);
+          if (!["bool","int","string","none","name"].includes(expect)) expect = "string";
+          if (!(expect === "none" && state.JackDefsMap.hasOwnProperty(key))) JackAddAiQuestion(key, question, expect, choices);
           if (directive === "#asking" && state.JackAiQuestions[key]) state.JackAiQuestions[key].ready = false;
         } else {
           state.debugOutput += "Invalid #ASK format: " + rest + "\n";
@@ -274,9 +439,9 @@ function JackPreprocess(input) {
       }
       case "#append": {
         if (!parent) break;
-        const m = rest.match(/^([A-Za-z0-9_]+)\s+(.*)$/);
+        const m = rest.match(/^([A-Za-z0-9_]+)\s+(.*)$/s);
         if (m) {
-          let key = m[1], val = JackEvalValue(m[2]);
+          let key = m[1], val = stripQuotes(JackEvalValue(m[2].trim()));
           state.JackDefsMap[key] = (state.JackDefsMap[key] || "") + val;
           state.debugOutput += key + " appended " + val + "\n";
         }
@@ -284,17 +449,17 @@ function JackPreprocess(input) {
       }
       case "#debug": {
         if (!parent) break;
-        let val = JackEvalValue(rest);
-        state.JackDefsMap.DEBUG += val;
+        let val = stripQuotes(JackEvalValue(rest.trim()));
+        state.JackDefsMap.DEBUG += val + "\n";
         state.debugOutput += "DEBUG += " + val + "\n";
         break;
       }
       case "#next": {
         if (!parent) break;
-        const m = rest.match(/^(?:\((\d+)\)\s+)?(.*)$/);
+        const m = rest.match(/^(?:\((\d+)\)\s+)?(.*)$/s);
         if (m) {
           let delay = m[1] ? parseInt(m[1],10) : null;
-          let data = JackEvalValue(m[2]);
+          let data = stripQuotes(JackEvalValue(m[2].trim()));
           state.JackDefsMap.NEXT = data;
           if (delay !== null) {
             state.JackDefsMap.TURNXT = String(parseInt(state.JackDefsMap.TURN,10) + delay);
@@ -303,27 +468,69 @@ function JackPreprocess(input) {
         }
         break;
       }
+      case "#scene": {
+        if (!parent) break;
+        let data = stripQuotes(JackEvalValue(rest.trim()));
+        state.JackDefsMap.SCENE = data;
+        state.debugOutput += "SCENE <- " + data + "\n";
+        break;
+      }
     }
     if (authorsPrefix && parent && active[active.length - 1]) out.push(authorsPrefix.trim());
   }
 
   if (state.JackDefsMap.hasOwnProperty("NEXT")) {
-    out.push("[AI guidance for continuation: " + state.JackDefsMap.NEXT + " ]");
+    let guidance = state.JackDefsMap.NEXT;
+    if (state.JackDefsMap.hasOwnProperty("SCENE") && state.JackDefsMap.SCENE) {
+      guidance = state.JackDefsMap.SCENE + "\n" + guidance;
+    }
+    out.push("[AI guidance for continuation: " + guidance + " ]");
+  }
+
+  // check unbalanced condition stack
+  if (active.length !== 1) {
+    let err = "Unbalanced directives: missing #endif (depth=" + (active.length-1) + ")\n";
+    state.debugOutput += err;
+    state.JackDefsMap.DEBUG += err;
   }
 
   return out.join("\n");
 }
 
-// === Macro substitution ===
+// === Macro substitution and special { ... } evaluation ===
 function JackApplyMacros(text) {
-  return String(text).replace(/\{([A-Za-z0-9_]+)\}/g,(m,k)=> state.JackDefsMap.hasOwnProperty(k)?state.JackDefsMap[k]:m);
+  return String(text).replace(/\{([^}]+)\}/g,(m,inner)=>{
+    inner = inner.trim();
+    // variable
+    if (/^[A-Za-z0-9_]+$/.test(inner)) {
+      return state.JackDefsMap.hasOwnProperty(inner) ? state.JackDefsMap[inner] : m;
+    }
+    // special functions or expressions
+    try {
+      let special = JackEvalSpecial(inner);
+      // if special returns same token (no match), try numeric expression
+      if (special === inner) {
+        // numeric eval fallback
+        let exp = inner.replace(/\b([A-Za-z0-9_]+)\b/g,(kk)=> state.JackDefsMap.hasOwnProperty(kk)?state.JackDefsMap[kk]:kk);
+        try { let r = eval(exp); if (typeof r === 'number' && !isNaN(r)) return String(r); } catch(e){}
+        return special;
+      }
+      return special;
+    } catch (e) {
+      state.debugOutput += "Macro eval error: " + e.message + "\n";
+      return m;
+    }
+  });
 }
 
 // === Condition evaluation ===
 function JackCheckCondition(expr) {
   try {
     expr = JackApplyMacros(expr);
+    // replace remaining known defines
     for (let k in state.JackDefsMap) expr = expr.replace(new RegExp("\\b"+k+"\\b","g"), state.JackDefsMap[k]);
+    // evaluate special function calls in the expression (like P(15%), RND(...), INCLUDES(), REGEX())
+    expr = expr.replace(/\b(REGEX|INCLUDES|P|RND|SELECT)\s*\([^)]*\)/g, (m)=> JackEvalSpecial(m));
     return !!eval(expr);
   } catch(e) {
     state.debugOutput += "Cond error: " + e.message + "\n";
