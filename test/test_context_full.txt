@@ -1,0 +1,85 @@
+#if {TURN}==1
+  #set A 5
+  #set B 7
+  #define SUM {A}+{B}
+  #define D {SUM}*2
+
+  #if {SUM}==12
+    #debug PASS: arithmetic addition
+  #else
+    #debug FAIL: arithmetic addition (SUM={SUM})
+  #endif
+
+  #if {D}==24
+    #debug PASS: arithmetic multiplication
+  #else
+    #debug FAIL: arithmetic multiplication (D={D})
+  #endif
+
+  #append STR Hello
+  #append STR  World
+  #if "{STR}"=="HelloWorld"
+    #debug PASS: string append
+  #else
+    #debug FAIL: string append (STR={STR})
+  #endif
+
+  #undef TEMP
+  #ifndef TEMP
+    #debug PASS: undef/ifndef
+  #else
+    #debug FAIL: undef/ifndef (TEMP still defined)
+  #endif
+
+  #next Immediate NEXT from TURN1
+  #next (2) NEXT after delay from TURN3
+
+  #debug --- END TURN1 ---
+#endif
+
+
+#if {TURN}==2
+  #if {A}==5 && {B}==7
+    #debug PASS: variable persistence A,B
+  #else
+    #debug FAIL: variable persistence (A={A},B={B})
+  #endif
+
+  #if {SUM}==12
+    #debug PASS: SUM persistence
+  #else
+    #debug FAIL: SUM persistence (SUM={SUM})
+  #endif
+
+  #debug --- END TURN2 ---
+#endif
+
+
+#if {TURN}==3
+  #if {D}/{A}==4.8
+    #debug PASS: division D/A
+  #else
+    #debug FAIL: division D/A (D={D},A={A},result={D}/{A})
+  #endif
+
+  #define E {D}-{SUM}
+  #if {E}==12
+    #debug PASS: subtraction D-SUM
+  #else
+    #debug FAIL: subtraction D-SUM (E={E},D={D},SUM={SUM})
+  #endif
+
+  #ifdef STR
+    #debug PASS: STR still defined
+  #else
+    #debug FAIL: STR missing
+  #endif
+
+  #debug --- END TURN3 ---
+
+  #if {E}==12 && {D}==24 && {SUM}==12 && "{STR}"=="Hello World"
+    #debug OVERALL SUCCESS
+  #else
+    #debug OVERALL FAILURE (A={A},B={B},SUM={SUM},D={D},E={E},STR={STR})
+  #endif
+#endif
