@@ -1,18 +1,19 @@
 # Jack-Preprocess for AI Dungeon
 
-## Overview
+## Key Features
 
-`JackPreprocess` is a lightweight preprocessor for AI Dungeon context scripts.
+`JackPreprocess` is a preprocessor for AI Dungeon context scripts.
+
 It works like a simplified C preprocessor and lets you:
-
-* Define and undefine variables (`#define`, `#undef`)
-* Conditionally include/exclude blocks (`#if`, `#ifdef`, `#ifndef`, `#else`, `#endif`)
-* Ask questions for AI to be able to do smart setting of variables (`#ask`, `#refresh`)
-* Substitute macros (`{KEY}` → value)
-* Evaluate simple arithmetic (`#define COUNTER {COUNTER} + 1`)
-* Predefines `TURN` that is incremented automatically
-* Content of define `WHAT_NEXT` get added after user input
-* Uses `COOLDOWN` to track time until next AI question is allowed (this can be updated)
+* Define, update, and remove variables dynamically (#define, #set, #undef, #append)
+* Conditional inclusion of text blocks (#if, #elif, #else, #endif, #ifdef, #ifndef)
+* Inline arithmetic and expression evaluation (+, -, *, /, ())
+* Macro substitution with {KEY} syntax for variables
+* Predefined state variables (TURN, NEXT, DEBUG, etc.) updated automatically
+* AI-assisted variables via #ask, #asking, #refresh
+* Story guidance scheduling with #next, #scene
+* Debug logging with #debug
+* Extensible macros such as P() and RND()
 
 It is intended to run for text in **context-hook**, so it processes everything in the AI context before it is sent to the model:
 
@@ -30,42 +31,162 @@ WARNING: Remember to have `#endif` after conditional blocks. Not having it at en
 2. Replace your **context.js** with the minimalistic version below (or add the `JackPreprocess`/`JackAskAiQuestion` lines to your own).
 3. Replace your **output.js** with the minimalistic version below (or add `JackCatchAiAnswer` line).
 4. (Optional) Add full `input.js` and `output.js` from Github if you want debug functionality (`/debug` commands, system messages).
+5. (Optional) Store user input to `state.lastInput` and output to `state.lastOutput` to make these available for the preprocessor as INPUT and OUTPUT.
+6. (Optional) Fetch any debug messages that are output via `#debug` using JackGetUserDebug().
 
 ---
 
-## Features
+## 1. Variable assignment
 
-### Directives
+### Reserved Variables
+TURN → starts at -1, increments each call.
+NEXT → appended as [AI guidance for continuation: ...].
+TURNNXT → used internally by #next (delay) to clear expired guidance.
+DEBUG → holds debug messages, cleared each call.
+COOLDOWN → number of turns before AI can be queried again, default 10.
+
+### #define / #set
 
 ```
-#define KEY VALUE     // define KEY
-#undef KEY            // undefine KEY
-#ifdef KEY            // true if KEY defined
-#ifndef KEY           // true if KEY not defined
-#if <expr>            // evaluate condition
-#else                 // alternate branches
+#define VARIABLE_NAME value
+```
+
+Defines new *VARIABLE_NAME* (or updates existing) with given *value* or *{expression}*.
+*value* can be plain text, or enclosed inside either " or ' characters.
+
+Example:
+
+```
+#define A 3
+#define SUM {A} + 2
+#define ANSWER "SUM: A + 2 = {SUM}"
+// ANSWER = "SUM: A + 2 = 5"
+```
+
+### #undef
+
+```
+#undef VARIABLE_NAME
+```
+
+Removes a previously defined variable.
+
+Example:
+
+```
+#undef ANSWER
+```
+
+### #append
+
+```
+#append VARIABLE_NAME text
+```
+
+Appends given *text* (or *{expression}*) to the variable’s current value.
+
+Example:
+
+```
+#define LOG "Start"
+#append LOG ", Step 1"
+// LOG = "Start, Step 1"
+```
+
+### #debug
+
+```
+#debug text
+```
+
+Appends *text* (after expanding expressions) into special variable *DEBUG* and debug log.
+
+Example:
+
+```
+#debug "Value of A={A}"
+```
+
+---
+
+## 2. Conditionals
+
+### #ifdef / #ifndef
+
+```
+#ifdef VARIABLE_NAME
+  ...
 #endif
-#ask KEY "Question?" (type)   // ask AI and store answer
-#refresh KEY                  // force re-asking AI question
 ```
 
-### `#ask`
+Includes enclosed text only if variable is defined (or not defined for `#ifndef`).
 
-`#ask` lets you query the AI for information and store the answer in a variable.
-The format is:
+### #if / #elif / #else / #endif
 
 ```
-#ask KEY "Question?" (type)
+#if {expression}
+  ...
+#elif {expression}
+  ...
+#else
+  ...
+#endif
 ```
 
-* **KEY** → variable name to store the answer
-* **Question?** → string sent to the AI
-* **type** → expected answer: `bool`, `int`, `string`, or `none`
+Evaluates given expression. Includes enclosed text if condition is true. `#elif` and `#else` provide alternatives.
 
+---
+
+## 3. Story control
+
+### #next / #scene
+
+```
+#next text
+#next (delay) text
+```
+
+Schedules text to appear on the next turn. Optional *delay* sets how many turns later.
+
+```
+#scene text
+```
+
+Persistent addition to the story context. Unlike `#next`, it is not cleared automatically each turn.
+
+Example:
+
+```
+#next (2) "Two turns later this happens."
+#scene "Background story always present."
+```
+
+---
+
+## 4. AI Interaction
+
+### `#ask` / `#asking`
+
+```
+#ask VARIABLE "Question?" (type)
+#asking VARIABLE "Question?" (type)
+```
+
+Requests the AI to answer a question. Answer is stored in **VARIABLE**.
+* With `#ask`, the answer persists once found.
+* With `#asking`, the question is repeated until asked again (**COOLDOWN**=10).
+
+**KEY** → variable name to store the answer
+**Question?** → string sent to the AI
+**type** → expected answer: `bool`, `int`, `string`, or `none`
   * `bool` → AI must answer yes/no → stored as `1` or `0`
   * `int` → AI must return a single integer
   * `string` → AI must return a plain string
   * `none` → treated like `bool`, but defines the variable only if answer is positive
+
+NOTE: COOLDOWN variable can be set to zero if wanting to force answer immediately.
+
+TODO: Rewrite cooldown logic and add directives for better control.
 
 Examples:
 
@@ -79,18 +200,27 @@ The survivors prepare for a fight.
 There are {ENEMY_COUNT} foes.
 ```
 
+
+
+Examples:
+
+```
+#ask DANGER "Are zombies near?" (none)
+// Defines DANGER=1 if yes, or nothing if no
+
+#ask COUNT "How many doors are there?" (int)
+// COUNT = number
+
+#ask HERO "Who rescued Lisa?" (name)
+// HERO = "John"
+```
+
 ### `#refresh`
+
+`#refresh VARIABLE`
 
 `#refresh` clears the ready-state of a previous `#ask`.
 This forces the AI to be queried again, even if the variable already has a value.
-
-Example:
-
-```
-#ask WEATHER "What is the weather like?" (string)
-#refresh WEATHER
-It is {WEATHER} today.
-```
 
 ---
 
