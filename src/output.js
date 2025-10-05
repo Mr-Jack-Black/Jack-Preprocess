@@ -31,6 +31,12 @@ const modifier = (text) => {
   
   // Store output
   state.lastOutput = text;
+
+  // For printing out #debug -messages (optional)
+  let dbg = JackGetUserDebug();
+  if (dbg) {
+      text += "\n\n<SYSTEM>\n" + dbg + "\n</SYSTEM>\n";
+  }
   
   // Your other output modifier scripts go here (alternative)
   return {text};
