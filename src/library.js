@@ -344,17 +344,6 @@ function JackPreprocess(input) {
         const m = rest.match(/^([A-Za-z0-9_]+)(?:\s+(.*))?$/s);
         if (m) {
           let key = m[1];
-          /*let rawVal = m[2] || "";
-          let val = "";
-          // support quoted values with single or double quotes (keep internal spaces)
-          let q = rawVal.trim();
-          if ((q.startsWith("'") && q.endsWith("'")) || (q.startsWith('"') && q.endsWith('"'))) {
-            val = q.slice(1,-1);
-          } else if (q === "") {
-            val = state.JackDefsMap[key] || "";
-          } else {
-            val = JackEvalValue(rawVal);
-          }*/
           let val = m[2] || "";
           val = stripQuotes(JackEvalValue(val.trim()));
           state.JackDefsMap[key] = val;
@@ -486,14 +475,6 @@ function JackPreprocess(input) {
     }
     out.push("[AI guidance for continuation: " + guidance + " ]");
   }
-
-  // check unbalanced condition stack
-  if (active.length !== 1) {
-    let err = "Unbalanced directives: missing #endif (depth=" + (active.length-1) + ")\n";
-    state.debugOutput += err;
-    state.JackDefsMap.DEBUG += err;
-  }
-
   return out.join("\n");
 }
 
