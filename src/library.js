@@ -1,4 +1,5 @@
 // === Global variables ===
+const VERSION = "v0.6-alpha";
 
 // Not required by the library
 state.lastContext = state.lastContext || '';
@@ -9,7 +10,8 @@ state.deepDebugMode = state.deepDebugMode || false;
 
 // Required variables
 state.debugOutput = state.debugOutput || '';
-state.JackDefsMap = state.JackDefsMap || { TURN: "-1", DEBUG: "" }; // DEBUG predefined
+state.JackDefsMap = state.JackDefsMap || { TURN: "-1", DEBUG: "", DEBUG_ON: "true" };
+state.JackDefsNamespace = state.JackDefsNamespace || '';
 
 // AI Questions
 state.JackAiQuestions = state.JackAiQuestions || {};
@@ -349,6 +351,7 @@ function JackOutputProcess(text) {
 
   if (state.deepDebugMode) {
     sysOut += "=== /debug on (disable these with /debug off) ===\n";
+    sysOut += "JP-Version: " + VERSION + "\n";
     sysOut += "info.actionCount = " + info.actionCount +
               state.debugOutput +
               "Defines: \n" + JackDumpDefs(state.JackDefsMap) + "\n" +
@@ -357,6 +360,7 @@ function JackOutputProcess(text) {
               state.lastOutput = state.lastOutput.replace(/<SYSTEM>[\s\S]*?<\/SYSTEM>/g, '').trim();
   } else if (state.debugMode) {
     sysOut += "=== /debug on (disable these with /debug off) ===\n";
+    sysOut += "JP-Version: " + VERSION + "\n";
     sysOut += "info.actionCount = " + info.actionCount +
               state.debugOutput +
               "Defines:\n" + JackDumpDefs(state.JackDefsMap) + "\n" +
@@ -370,6 +374,20 @@ function JackOutputProcess(text) {
 
   return text;
 }
+
+// === Resolve Key (namespace) ===
+function JackResolveKey(key) {
+  if (!key) return key;
+  let up = key.toUpperCase();
+  if (up.startsWith("L:")) {
+    return state.JackDefsNamespace + "_" + key.slice(2);
+  }
+  if (up.startsWith("LOCAL:")) {
+    return state.JackDefsNamespace + "_" + key.slice(6);
+  }
+  return key;
+}
+
 
 // === Preprocess context text ===
 function JackPreprocess(text) {
@@ -449,20 +467,9 @@ function JackPreprocess(text) {
       case "#define":
       case "#set": {
         if (!parent) break;
-        const m = rest.match(/^([A-Za-z0-9_]+)(?:\s+(.*))?$/s);
+        const m = rest.match(/^([A-Za-z0-9_:.]+)(?:\s+(.*))?$/s);
         if (m) {
-          let key = m[1];
-          /*let rawVal = m[2] || "";
-          let val = "";
-          // support quoted values with single or double quotes (keep internal spaces)
-          let q = rawVal.trim();
-          if ((q.startsWith("'") && q.endsWith("'")) || (q.startsWith('"') && q.endsWith('"'))) {
-            val = q.slice(1,-1);
-          } else if (q === "") {
-            val = state.JackDefsMap[key] || "";
-          } else {
-            val = JackEvalValue(rawVal);
-          }*/
+          let key = JackResolveKey(m[1]);
           let val = m[2] || "";
           val = stripQuotes(JackEvalValue(val.trim()));
           state.JackDefsMap[key] = val;
@@ -470,20 +477,31 @@ function JackPreprocess(text) {
         }
         break;
       }
+      case "#namespace": {
+        if (!parent) break;
+        let ns = stripQuotes(rest.trim());
+        if (!ns || /^global$/i.test(ns)) ns = "";
+        state.JackDefsNamespace = ns;
+        state.debugOutput += "NAMESPACE <- " + ns + "\n";
+        break;
+      }
       case "#undef": {
         if (!parent) break;
-        let key = rest.split(/\s+/)[0];
+        //let key = rest.split(/\s+/)[0];
+        let key = JackResolveKey(rest.split(/\s+/)[0]);
         delete state.JackDefsMap[key];
         state.debugOutput += key + " <- undefined\n";
         break;
       }
       case "#ifdef": {
-        let key = rest.split(/\s+/)[0];
+        //let key = rest.split(/\s+/)[0];
+        let key = JackResolveKey(rest.split(/\s+/)[0]);
         active.push(parent && state.JackDefsMap.hasOwnProperty(key));
         break;
       }
       case "#ifndef": {
-        let key = rest.split(/\s+/)[0];
+        //let key = rest.split(/\s+/)[0];
+        let key = JackResolveKey(rest.split(/\s+/)[0]);
         active.push(parent && !state.JackDefsMap.hasOwnProperty(key));
         break;
       }
@@ -530,7 +548,7 @@ function JackPreprocess(text) {
         if (!parent) break;
         let m = rest.match(/^([A-Za-z0-9_]+)\s+"([^"]+)"(?:\s+\(([^)]+)\))?/);
         if (m) {
-          let key = m[1], question = m[2], expect = m[3] ? m[3].toLowerCase() : null;
+          let key = JackResolveKey(m[1]), question = m[2], expect = m[3] ? m[3].toLowerCase() : null;
           let choices = null;
           let cm = rest.match(/list=\[([^\]]+)\]/i);
           if (cm) {
@@ -551,7 +569,8 @@ function JackPreprocess(text) {
       }
       case "#refresh": {
         if (!parent) break;
-        let key = rest.split(/\s+/)[0];
+        //let key = rest.split(/\s+/)[0];
+        let key = JackResolveKey(rest.split(/\s+/)[0]);
         if (state.JackAiQuestions[key]) {
           state.JackAiQuestions[key].ready = false;
           state.debugOutput += "#REFRESH cleared ready for " + key + "\n";
@@ -562,7 +581,7 @@ function JackPreprocess(text) {
         if (!parent) break;
         const m = rest.match(/^([A-Za-z0-9_]+)\s+(.*)$/s);
         if (m) {
-          let key = m[1], val = stripQuotes(JackEvalValue(m[2].trim()));
+          let key = JackResolveKey(m[1]), val = stripQuotes(JackEvalValue(m[2].trim()));
           state.JackDefsMap[key] = (state.JackDefsMap[key] || "") + val;
           state.debugOutput += key + " appended " + val + "\n";
         }
@@ -570,9 +589,29 @@ function JackPreprocess(text) {
       }
       case "#debug": {
         if (!parent) break;
-        let val = stripQuotes(JackEvalValue(rest.trim()));
-        state.JackDefsMap.DEBUG += val + "\n";
-        state.debugOutput += "DEBUG += " + val + "\n";
+        if (state.JackDefsMap["DEBUG_OFF"] === undefined) {
+          let val = stripQuotes(JackEvalValue(rest.trim()));
+          state.JackDefsMap.DEBUG += val + "\n";
+          state.debugOutput += "DEBUG += " + val + "\n";
+        }
+        break;
+      }
+      case "#debug_off": {
+        if (!parent) break;
+        state.JackDefsMap["DEBUG_OFF"] = "Debug disabled";
+        break;
+      }
+      case "#debug_disable": {
+        state.JackDefsMap["DEBUG_OFF"] = "Debug disabled";
+        break;
+      }
+      case "#debug_on": {
+        if (!parent) break;
+        delete state.JackDefsMap["DEBUG_OFF"];
+        break;
+      }
+      case "#debug_enable": {
+        state.JackDefsMap["DEBUG_OFF"] = "Debug disabled";
         break;
       }
       case "#next": {
@@ -628,8 +667,12 @@ function JackApplyMacros(text) {
   return String(text).replace(/\{([^}]+)\}/g,(m,inner)=>{
     inner = inner.trim();
     // variable
-    if (/^[A-Za-z0-9_]+$/.test(inner)) {
-      return state.JackDefsMap.hasOwnProperty(inner) ? state.JackDefsMap[inner] : m;
+    //if (/^[A-Za-z0-9_]+$/.test(inner)) {
+    //  return state.JackDefsMap.hasOwnProperty(inner) ? state.JackDefsMap[inner] : m;
+    //}
+    if (/^[A-Za-z0-9_:.]+$/.test(inner)) {
+      let key = JackResolveKey(inner);
+      return state.JackDefsMap.hasOwnProperty(key) ? state.JackDefsMap[key] : m;
     }
     // special functions or expressions
     try {
