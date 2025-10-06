@@ -46,11 +46,15 @@ WARNING: Remember to have `#endif` after conditional blocks. Not having it at en
 ## 1. Variable assignment
 
 ### Reserved Variables
-TURN → starts at -1, increments each call.
-NEXT → appended as [AI guidance for continuation: ...].
-TURNNXT → used internally by #next (delay) to clear expired guidance.
-DEBUG → holds debug messages, cleared each call.
-COOLDOWN → number of turns before AI can be queried again, default 10.
+| Variable  | Description                                                                 |
+|-----------|-----------------------------------------------------------------------------|
+| TURN      | Starts at 0, increments each call.                                          |
+| NEXT      | Appended as `[AI guidance for continuation: ...]`.                          |
+| TURNNXT   | Used internally by `#next (delay)` to clear expired guidance.               |
+| DEBUG     | Holds debug messages, cleared each call.                                    |
+| COOLDOWN  | Number of turns before AI can be queried again, default is 10.              |
+| INPUT     | Holds last user input                                                       |
+| OUTPUT    | Holds last output to player                                                 |
 
 ### #define / #set
 
@@ -107,6 +111,7 @@ Example:
 ```
 
 Appends *text* (after expanding expressions) into special variable *DEBUG* and debug log.
+Debug messages are enabled by default. They can be disabled with `#debug off` and re-enabled with `#debug on`.
 
 Example:
 
@@ -142,9 +147,42 @@ Includes enclosed text only if variable is defined (or not defined for `#ifndef`
 
 Evaluates given expression. Includes enclosed text if condition is true. `#elif` and `#else` provide alternatives.
 
+### #namespace
+
+```
+#namespace {name of local namespace}
+#namespace gobal
+```
+Defines namespace enabling local variables which must use format `{local:COUNT}` or `{L:COUNT}`.
+Not these variables will be different depending on NAMESPACE so code can be copied as it is.
+
+NAMESPACE is sticky and will bleed over to next StoryCards. Thus if you use #namespace be sure to define it separately on every code area.
+
+Note that **#begin** and **#end** directives will reset the NAMESPACE back to global.
+
 ---
 
-## 3. Story control
+## 3. Commenting
+```
+#begin
+// Comments are possible only after #begin directive
+// #begin will also default namespace back to global.
+
+This will be visible for AI. // Comment here is NOT allowed. This will be visible to AI!
+
+/* This kind of comment is also ok.
+   But be sure to put comment signs always first on each line.
+
+   #end directive will stop comment processing.
+   This is important as otherwise the comment processing will be applied
+   also to Story Summary and even for Recent Story!
+*/
+#end
+```
+
+---
+
+## 4. Story control
 
 ### #next / #scene
 
@@ -183,13 +221,14 @@ Requests the AI to answer a question. Answer is stored in **VARIABLE**.
 * With `#ask`, the answer persists once found.
 * With `#asking`, the question is repeated until asked again (**COOLDOWN**=10).
 
-**KEY** → variable name to store the answer
-**Question?** → string sent to the AI
-**type** → expected answer: `bool`, `int`, `string`, or `none`
+**type** is expected answer: `bool`, `int`, `string`, `name`, or `none`
   * `bool` → AI must answer yes/no → stored as `1` or `0`
   * `int` → AI must return a single integer
+  * `name` → AI must return a name (expect first capital letters)
   * `string` → AI must return a plain string
   * `none` → treated like `bool`, but defines the variable only if answer is positive
+
+WARNING: These are not yet very realiable. Recomend using bool, int, or none mostly.
 
 NOTE: COOLDOWN variable can be set to zero if wanting to force answer immediately.
 
@@ -207,21 +246,6 @@ The survivors prepare for a fight.
 There are {ENEMY_COUNT} foes.
 ```
 
-
-
-Examples:
-
-```
-#ask DANGER "Are zombies near?" (none)
-// Defines DANGER=1 if yes, or nothing if no
-
-#ask COUNT "How many doors are there?" (int)
-// COUNT = number
-
-#ask HERO "Who rescued Lisa?" (name)
-// HERO = "John"
-```
-
 ### `#refresh`
 
 `#refresh VARIABLE`
@@ -229,17 +253,86 @@ Examples:
 `#refresh` clears the ready-state of a previous `#ask`.
 This forces the AI to be queried again, even if the variable already has a value.
 
+## 5. Variables / Expressions / Conditions
+
+### Variable resolution
+
+Variable *value* is referred by putting it into brackets, like {VARIABLE}.
+When working with *strings* you can use "-quatation or '-quatation.
+
+Example:
+
+```
+#set A 4.5
+#set B 5.5
+#set SUM {A}+{B}+4
+// SUM == "14"
+#set D {A}
+// D = "4.5"
+#set D A
+// D == "A"
+#set NAME1 Lisa
+// NAME1 == "Lisa"
+#set NAME2 "Smith"
+// NAME2 == "Smith"
+#append NAME3 {NAME2}
+// NAME3 == "LisaSmith"
+```
+
+Local variables are indicated by having `local:` or `L:` prefix. These prefixes has no impact unless a NAMESPACE is declared using `#namespace {name}` directive. The NAMESPACE is sticky, thus it is important that each file will define NAMESPACE or you will use `#begin` and `#end` for indicating the scripted area.
+
+## 6. Built-in Functions
+
+### TOREGEX(text, flags)
+Creates a regex literal string from the given text and optional flags.  
+Example:  
+`TOREGEX("hello.*", "i")` → `/hello.*/i`
+
 ---
 
-### Macro Substitution
+### REGEX(string, pattern)
+Tests whether a string matches a regex pattern.  
+- Returns `"1"` if match found, `"0"` otherwise.  
+- Captured groups are stored in `M1`, `M2`, `M3`.  
+Example:  
+`REGEX("abc123", "([a-z]+)([0-9]+)")` → `1` with `M1="abc"`, `M2="123"`
 
-```
-#define NAME Lisa
-The hero is {NAME}.
-→ "The hero is Lisa."
-```
+---
 
-### User Input
+### INCLUDES(string, substring)
+Checks if a string contains a substring.  
+- Returns `"1"` if found, `"0"` if not.  
+Example:  
+`INCLUDES("foobar", "foo")` → `1`
+
+---
+
+### P(probability)
+Returns `"1"` with the given probability, `"0"` otherwise.  
+- Supports percentages (`P(15%)`)  
+- Decimal fractions (`P(0.15)`)  
+- Variables (`P({A})`)  
+Example:  
+`P(50%)` → `"1"` about half the time.
+
+---
+
+### RND(min, max)
+Generates a random integer between `min` and `max` inclusive.  
+Example:  
+`RND(1,6)` → random number from 1 to 6.
+
+---
+
+### SELECT(N, [A,B,C])
+Selects the Nth element from a list.  
+- Indexing starts at 0.  
+- Returns empty string if index is out of range.  
+Example:  
+`SELECT(1, [apple, banana, cherry])` → `banana`
+
+
+## 7. User Input / Debugging
 
 * **Story** input is included as written.
 * **Say/Do** input is prefixed with `>` (so `#` macros won’t work inside, but `{VAR}` substitution still does).
