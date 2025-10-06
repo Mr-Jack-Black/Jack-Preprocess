@@ -1,5 +1,12 @@
 # Jack-Preprocess for AI Dungeon
 
+## Version Info
+v0.5-alpha (6.10.2025): Fixed problem where system messages were not removed
+
+## Known Bugs
+1. If there would be multiple system messages "<SYSTEM>" the regular expressions fail to remove them. Current solution is to make sure that there is only one.
+2. Questions for AI #ask/#asking work but robustness is not guaranteed. These need work.
+
 ## Key Features
 
 `JackPreprocess` is a preprocessor for AI Dungeon context scripts.
