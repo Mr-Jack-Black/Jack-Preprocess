@@ -394,6 +394,7 @@ function JackPreprocess(text) {
 
   // Remove any SYSTEM-messages
   text = text.replace(/<SYSTEM>[\s\S]*?<\/SYSTEM>/g, '');
+  state.JackDefsNamespace = "";
 
   const lines = (text || "").split(/\r?\n/);
   const authorsNotePattern = /^\[Author's note:\s*/i;
@@ -457,6 +458,7 @@ function JackPreprocess(text) {
       case "#begin": {
         state.JackRemoveCommentedLines = true;
         state.JackInBlockComment = false;
+        state.JackDefsNamespace = "";
         break;
       }
       case "#end": {
