@@ -262,8 +262,8 @@ function JackEvalSpecial(token) {
     if (isNaN(idx)) return "";
     let list = m[2].split(/,\s*/).map(x=>stripQuotes(JackApplyMacros(x.trim())));
     if (list.length === 0) return "";
-    if (idx < 0 || idx >= list.length) return "";
-    return list[idx];
+    if (idx < 1 || idx >= (list.length + 1)) return "";
+    return list[idx-1];
   }
 
   // simple numeric/string fallback
