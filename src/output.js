@@ -1,44 +1,24 @@
 // NOTE: Adding this file is optional
-// - it only includes adding debug output.
-
-// === Adds debug message (if debug enabled) ===
-function JackAddDebugInfo(text) {
-  if (state.deepDebugMode) {
-    text += "\n<SYSTEM>\ninfo.actionCount = " + info.actionCount +
-            state.debugOutput +
-            "Defines: \n" + JackDumpDefs(state.JackDefsMap) +
-            JackAiQuestionsDump() +
-            "\nCONTEXT_HOOK:\n" + state.lastContext + "\n</SYSTEM>\n";
-  } else if (state.debugMode) {
-    text += "\n<SYSTEM>\ninfo.actionCount = " + info.actionCount +
-            state.debugOutput +
-            "Defines:\n" + JackDumpDefs(state.JackDefsMap) +
-            JackAiQuestionsDump() +
-            "</SYSTEM>\n";
-  }
-
-  return text;
-}
+//
+// Needed for:
+// - /debug and for #OUTPUT and #DEBUG directives
+// - #ASK/#ASKING directives
 
 // === OUTPUT-hook (data sent to user output) ===
 const modifier = (text) => {
   
   // Needed to support #ASK and #REFRESH directives
+  // - AI answer expected on input
+  // - Returns sometimes "< click continue >"
+  //   but mostly unmodified input text. 
   text = JackCatchAiAnswer(text);
 
-  // Print debug info if enabled (optional)
-  text = JackAddDebugInfo(text);
-  
-  // Store output
-  state.lastOutput = text;
+  // Needed for /debug and for #OUTPUT and #DEBUG directives
+  text = JackOutputProcess(text);
 
-  // For printing out #debug -messages (optional)
-  let dbg = JackGetUserDebug();
-  if (dbg) {
-      text += "\n\n<SYSTEM>\n" + dbg + "\n</SYSTEM>\n";
-  }
+  // Optional: The content of lastOutput is stored to {OUTPUT
+  //state.lastOutput = text;
   
-  // Your other output modifier scripts go here (alternative)
   return {text};
-};
+}
 modifier(text);
