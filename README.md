@@ -1,8 +1,8 @@
 # Jack-Preprocess for AI Dungeon
 
 ## Version Info
-v0.6-alpha (7.10.2025): Added support for NAMESPACE and "local" variables.
-v0.5-alpha (6.10.2025): Fixed problem where system messages were not removed
+* v0.6-alpha (7.10.2025): Added support for NAMESPACE and "local" variables.
+* v0.5-alpha (6.10.2025): Fixed problem where system messages were not removed
 
 ## Known Bugs
 1. If there would be multiple system messages the regular expressions fail to remove them. Current solution is to make sure that there is only one.
