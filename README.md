@@ -327,10 +327,10 @@ Example:
 
 ### SELECT(N, [A,B,C])
 Selects the Nth element from a list.  
-- Indexing starts at 0.  
+- Indexing starts at 1.  
 - Returns empty string if index is out of range.  
 Example:  
-`SELECT(1, [apple, banana, cherry])` → `banana`
+`SELECT(2, [apple, banana, cherry])` → `banana`
 
 
 ## 7. User Input / Debugging
