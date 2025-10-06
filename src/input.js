@@ -1,5 +1,5 @@
 // NOTE: Adding this file is optional
-// - it only includes user commands for debug.
+// - it only includes user commands for deeper debug.
 
 // Supported commands (case-insensitive):
 //   /debug on          → enable debug mode
@@ -9,7 +9,7 @@
 //   /debug KEY=VALUE   → define KEY with VALUE
 //   /debug KEY=null    → undefine KEY
 function JackCmdCheck(text) {
-
+    
     // Avoid executing commands from intro texts.
     if (info.actionCount < 2) return text;
 
@@ -17,7 +17,7 @@ function JackCmdCheck(text) {
     let lower = text.toLowerCase();
 
     // Do not process commands within SYSTEM messages.
-    lower = lower.replace(/<SYSTEM>[\s\S]*?<\/SYSTEM>/g, '');
+    //lower = lower.replace(/<SYSTEM>[\s\S]*?<\/SYSTEM>/g, '');
 
     if (lower.includes("/debug off")) {
         state.debugMode = false;
@@ -54,12 +54,13 @@ function JackCmdCheck(text) {
 // === INPUT-hook (data from user input) ===
 const modifier = (text) => {
 
-    // Process debug commands on user input
+    // Optional: Only needed for deeper debug
+    // (#debug-primitive works even without this)
     text = JackCmdCheck(text);
 
-    // Store input
+    // Optional: Store input to be available in {INPUT}
     state.lastInput = text;
 
     return {text};
-};
+}
 modifier(text);
