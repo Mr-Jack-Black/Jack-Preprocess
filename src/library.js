@@ -533,6 +533,7 @@ function JackPreprocess(text) {
         out.push(rest);
         break;
       }
+      case "#out":
       case "#output": {
         if (!parent) break;
         let m = rest.match(/^(\S+)(?:\s+(\S+))?(?:\s+(\S+))?/);
