@@ -1,22 +1,8 @@
-// Note: Adding function calls to JackPreprocess() and JackAskAiQuestion() is enough!
-//      (JackRemoveSystemMsg() is needed for debuging.)
+// Note: Adding function call to JackPreprocess() is enough
+// but JackAskAiQuestion is needed for AI questions (#ask/#asking)
 
-// === Remove debug messages ===
-function JackRemoveSystemMsg(text) {
-    if (state.debugMode) {
-        state.lastOutput = state.lastOutput.replace(/<SYSTEM>[\s\S]*?<\/SYSTEM>/g, '').trim();
-        state.debugOutput = "\nDebugOut: \n";
-    } else {
-        state.debugOutput = "";
-    }
-    return text.replace(/<SYSTEM>[\s\S]*?<\/SYSTEM>/g, '');
-}
-  
 // === CONTEXT-hook (data sent to AI) ===
 const modifier = (text) => {
-  
-    // Remove debug messages
-    text = JackRemoveSystemMsg(text);
 
     // C-style Preprosessing of the context
     text = JackPreprocess(text);
@@ -25,7 +11,7 @@ const modifier = (text) => {
     // which will send questions to AI
     text = JackAskAiQuestion(text);
 
-    // Store Context
+    // Optional: Store Context (only used for deep debug)
     state.lastContext = text;
     
     //return {text, stop};
