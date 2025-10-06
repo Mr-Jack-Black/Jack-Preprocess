@@ -105,14 +105,35 @@ Example:
 // LOG = "Start, Step 1"
 ```
 
+### `#output {type} {text} {delimiter}`
+
+The `#output` directive queues an output modification command that is applied during text post-processing. It supports three arguments:
+
+1. **type** – operation to perform (`prepend`, `append`, `replace`, `swap`, `remove`, `clear`, `stop`).
+2. **text** – primary string or pattern used by the operation.
+3. **delimiter** – optional string placed before and after the text when applicable.
+
+Operations:
+
+* `prepend {text} {delimiter}` → Inserts `{delimiter}{text}{delimiter}` at the start of the output.
+* `append {text} {delimiter}` → Inserts `{delimiter}{text}{delimiter}` at the end of the output.
+* `replace {pattern} {text}` → Replaces all matches of `{pattern}` with `{text}`. Regex syntax `/pattern/flags` is supported. If capturing groups are present, only the first group is replaced by `{text}`.
+* `swap {from} {to}` → Replaces all `{from}` substrings with `{to}`.
+* `remove {text}` → Deletes all occurrences of `{text}`.
+* `clear` → Clears the entire output.
+* `stop` → Stops processing any further queued output commands.
+
+Multiple `#output` directives can be stacked. They are executed in the order they were added.
+
 ### #debug
 
 ```
 #debug text
 ```
-
 Appends *text* (after expanding expressions) into special variable *DEBUG* and debug log.
-Debug messages are enabled by default. They can be disabled with `#debug off` and re-enabled with `#debug on`.
+Debug messages are enabled by default. They can be disabled with `#debug_off` and re-enabled with `#debug_on`.
+
+The difference to #output is that #debug comments are put within SYSTEM message that is never shown to AI.
 
 Example:
 
@@ -355,6 +376,9 @@ Debug messages are wrapped in `<SYSTEM> … </SYSTEM>` and automatically strippe
 
 ## Hook Files
 
+Minimalistic examples without debug-features.
+But user debug directives `#debug My debug message` works!
+
 ### context.js
 
 ```js
@@ -439,4 +463,4 @@ Lisa feels a chill as she realizes she is being stalked.
 
 ---
 
-This setup lets you preprocess your AI Dungeon context, dynamically change variables during play, query AI for values via `#ask`, refresh answers with `#refresh`, and inspect hidden state via debug messages.
+Please visit Discord/AI Dungeon for more discussion about this script.
