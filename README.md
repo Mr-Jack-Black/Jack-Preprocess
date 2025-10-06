@@ -1,6 +1,7 @@
 # Jack-Preprocess for AI Dungeon
 
 ## Version Info
+v0.6-alpha (7.10.2025): Added support for NAMESPACE and "local" variables.
 v0.5-alpha (6.10.2025): Fixed problem where system messages were not removed
 
 ## Known Bugs
@@ -202,7 +203,7 @@ Persistent addition to the story context. Unlike `#next`, it is not cleared auto
 Example:
 
 ```
-#next (2) "Two turns later this happens."
+#next (2) "This direction will be shown for two turns."
 #scene "Background story always present."
 ```
 
@@ -362,8 +363,8 @@ const modifier = (text) => {
   // C-style Preprosessing of the context
   text = JackPreprocess(text);
 
-  // Needed to support #ASK and #REFRESH directives
-  // which will send questions to AI
+  // Optional:
+  // Needed only to support #ASK/#ASKING directives
   text = JackAskAiQuestion(text);
 
   return {text};
@@ -377,16 +378,40 @@ modifier(text);
 const modifier = (text) => {
 
   // Needed to support #ASK and #REFRESH directives
+  // - AI answer expected on input
+  // - Returns sometimes "< click continue >"
+  //   but mostly unmodified input text. 
   text = JackCatchAiAnswer(text);
+
+  // Needed for /debug and for #OUTPUT and #DEBUG directives
+  text = JackOutputProcess(text);
+
+  // Optional: The content of lastOutput is stored to {OUTPUT}
+  //state.lastOutput = text;
+
+  return {text};
+};
+modifier(text);
+```
+### input.js
+
+```js
+const modifier = (text) => {
+
+  // For supporting /debug -development debugging see src/input.js
+
+  // Optional: Store input to be available in {INPUT}
+  state.lastInput = text;
 
   return {text};
 };
 modifier(text);
 ```
 
+
 ---
 
-## Example
+## Examples
 
 Input (e.g. Plot Essentials):
 
