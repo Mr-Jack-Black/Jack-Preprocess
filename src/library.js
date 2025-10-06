@@ -21,6 +21,9 @@ state.JackAiAnswerChoices = state.JackAiAnswerChoices || "";
 state.JackDefsMap.INPUT = state.lastInput || '';
 state.JackDefsMap.OUTPUT = state.lastOutput || '';
 
+// Output processing
+state.JackOutputCommands = state.JackOutputCommands || [];
+
 // Comment handling
 state.JackRemoveCommentedLines = state.JackRemoveCommentedLines || false;
 state.JackInBlockComment = state.JackInBlockComment || false;
@@ -101,67 +104,63 @@ function JackIsValidStoryText(txt) {
 
 // === Catch and process answer ===
 function JackCatchAiAnswer(text) {
-  let cleared = false;
   let ID = state.JackAiQuestionID;
-  if (ID) {
-    state.JackAiQuestionID = "";
-    cleared = true;
-    text = String(text || "").replace(CONTINUE_MSG, '').trim();
-
-    if (state.JackAiQuestions[ID]) {
-      let q = state.JackAiQuestions[ID];
-      let ans = String(text || "").trim();
-      state.lastAiAnswer = ans;
-      let valid = false;
-      let parsed = "";
-
-      if (q.expect === "bool" || q.expect === "none") {
-        let hasTrue = /\b(yes|true|1)\b/i.test(ans);
-        let hasFalse = /\b(no|false|0)\b/i.test(ans);
-        if (hasTrue && !hasFalse) { parsed = "1"; valid = true; }
-        else if (hasFalse && !hasTrue) { parsed = "0"; valid = true; }
-      } else if (q.expect === "int") {
-        let matches = ans.match(/[-+]?\d+/g);
-        if (matches && matches.length === 1) { parsed = matches[0]; valid = true; }
-      } else if (q.expect === "string") {
-        let cleaned = ans.replace(/<[^>]*>/g, "").trim();
-        if (cleaned.length > 0) { parsed = cleaned; valid = true; }
-      } else if (q.expect === "name") {
-        let cleaned = ans.trim();
-        if (/^[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?$/.test(cleaned)) { parsed = cleaned; valid = true; }
-      }
-
-      if (state.JackAiAnswerChoices) {
-        let choices = state.JackAiAnswerChoices.slice(1,-1).split(",");
-        if (choices.includes(ans)) { parsed = ans; valid = true; }
-      }
-
-      if (valid) {
-        q.answer = parsed;
-        q.ready = true;
-        if (q.expect === "none") {
-          if (!state.JackDefsMap.hasOwnProperty(ID) && parsed === "1") {
-            state.JackDefsMap[ID] = "1";
-          }
-        } else {
-          state.JackDefsMap[ID] = parsed;
-        }
-        state.debugOutput += ID + " <- " + parsed + " (from AI answer)\n";
-
-        // reset choices after use
-        state.JackAiAnswerChoices = "";
-
-        // attempt to extract story continuation after the answer
-        let after = state.lastAiAnswer.replace(parsed, "").trim();
-        if (JackIsValidStoryText(after)) return after;
-      } else {
-        state.debugOutput += "Invalid AI answer for ID=" + ID + " (" + q.expect + "): " + ans + "\n";
-      }
-    } else {
-      state.debugOutput += "JackCatchAiAnswer: no question entry for ID=" + ID + "\n";
-    }
+  if (!ID) {
+    // No active question, just pass through the story text
+    return text;
   }
-  return cleared ? CONTINUE_MSG : text;
+
+  // Clear immediately so question won't be re-processed
+  state.JackAiQuestionID = "";
+
+  if (state.JackAiQuestions[ID]) {
+    let q = state.JackAiQuestions[ID];
+    let ans = String(text || "").trim();
+    state.lastAiAnswer = ans;
+    let valid = false;
+    let parsed = "";
+
+    if (q.expect === "bool" || q.expect === "none") {
+      let hasTrue = /\b(yes|true|1)\b/i.test(ans);
+      let hasFalse = /\b(no|false|0)\b/i.test(ans);
+      if (hasTrue && !hasFalse) { parsed = "1"; valid = true; }
+      else if (hasFalse && !hasTrue) { parsed = "0"; valid = true; }
+    } else if (q.expect === "int") {
+      let matches = ans.match(/[-+]?\d+/g);
+      if (matches && matches.length === 1) { parsed = matches[0]; valid = true; }
+    } else if (q.expect === "string") {
+      let cleaned = ans.replace(/<[^>]*>/g, "").trim();
+      if (cleaned.length > 0) { parsed = cleaned; valid = true; }
+    } else if (q.expect === "name") {
+      let cleaned = ans.trim();
+      if (/^[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?$/.test(cleaned)) { parsed = cleaned; valid = true; }
+    }
+
+    if (state.JackAiAnswerChoices) {
+      let choices = state.JackAiAnswerChoices.slice(1, -1).split(",").map(s => s.trim());
+      if (choices.includes(ans) || choices.includes(parsed)) { parsed = ans; valid = true; }
+    }
+
+    if (valid) {
+      q.answer = parsed;
+      q.ready = true;
+      if (q.expect === "none") {
+        if (!state.JackDefsMap.hasOwnProperty(ID) && parsed === "1") state.JackDefsMap[ID] = "1";
+      } else {
+        state.JackDefsMap[ID] = parsed;
+      }
+      state.debugOutput += ID + " <- " + parsed + " (from AI answer)\n";
+      state.JackAiAnswerChoices = "";
+    } else {
+      state.debugOutput += "Invalid AI answer for ID=" + ID + " (" + q.expect + "): " + ans + "\n";
+      // leave q.ready false so it repeats later
+    }
+  } else {
+    state.debugOutput += "JackCatchAiAnswer: no question entry for ID=" + ID + "\n";
+  }
+
+  // Always return continue message if a question was pending
+  return CONTINUE_MSG;
 }
 
 // === Get stored answer ===
@@ -187,6 +186,14 @@ function JackAiQuestionsDump() {
 // === Helper: evaluate special functions used in conditions or { ... } sequences ===
 function JackEvalSpecial(token) {
   token = token.trim();
+
+  // TOREGEX(text, flags)
+  m = token.match(/^TOREGEX\s*\(([^,]+)(?:,\s*([^)]+))?\)$/i);
+  if (m) {
+    let txt = stripQuotes(JackApplyMacros(m[1].trim()));
+    let flg = m[2] ? stripQuotes(JackApplyMacros(m[2].trim())) : "";
+    return "/" + txt + "/" + flg;
+  }
 
   // REGEX(string, pattern)
   let m = token.match(/^REGEX\s*\(([^,]+),\s*(.+)\)$/i);
@@ -267,9 +274,110 @@ function stripQuotes(s) {
   return s;
 }
 
+// === Function to add commands for output processing ===
+// Requires: state.JackOutputCommand-variable and JackOutputProcess()
+function JackAddOutputCommand(cmd, arg1, arg2) {
+  const valid = ["prepend", "append", "replace", "swap", "remove", "clear", "stop"];
+  if (valid.indexOf(cmd) !== -1) {
+      state.JackOutputCommands.push({ cmd: cmd, arg1: arg1, arg2: arg2 });
+  }
+}
+
+// === Output-hook function to process #OUTPUT directive ===
+function JackOutputProcess(text) {
+  while (state.JackOutputCommands.length > 0) {
+      var c = state.JackOutputCommands.shift();
+      var cmd = c.cmd, arg1 = c.arg1 || "", arg2 = c.arg2 || "";
+
+      if (cmd === "prepend") {
+          text = arg2 + arg1 + arg2 + text;
+      }
+
+      else if (cmd === "append") {
+          text = text + arg2 + arg1 + arg2;
+      }
+
+      else if (cmd === "replace") {
+          // detect regex string format like "/pattern/flags"
+          if (typeof arg1 === "string" && arg1[0] === "/" && arg1.lastIndexOf("/") > 0) {
+              var lastSlash = arg1.lastIndexOf("/");
+              var pattern = arg1.slice(1, lastSlash);
+              var flags = arg1.slice(lastSlash + 1);
+              var regex = new RegExp(pattern, flags);
+
+              // replace using .match to check group existence
+              text = text.replace(regex, function(match) {
+                  var found = match.match(regex);
+                  if (found && found.length > 1) {
+                      // capturing group exists
+                      return match.replace(found[1], arg2);
+                  }
+                  return arg2;
+              });
+          } else {
+              // plain string replacement
+              text = text.split(arg1).join(arg2);
+          }
+      }
+
+      else if (cmd === "swap") {
+          text = text.split(arg1).join(arg2);
+      }
+
+      else if (cmd === "remove") {
+          text = text.split(arg1).join("");
+      }
+
+      else if (cmd === "clear") {
+        text = "";
+      }
+
+      else if (cmd === "stop") {
+        break;
+      }
+  }
+  // Store last clean output before debug messages
+  state.lastOutput = text;
+
+  // Collect debug info
+  let dbg = JackGetUserDebug();
+  let sysOut = "";
+
+  if (dbg) {
+    sysOut += "=== #DEBUG directives ===\n" + dbg + "\n";
+  }
+
+  if (state.deepDebugMode) {
+    sysOut += "=== /debug on (disable these with /debug off) ===\n";
+    sysOut += "info.actionCount = " + info.actionCount +
+              state.debugOutput +
+              "Defines: \n" + JackDumpDefs(state.JackDefsMap) + "\n" +
+              JackAiQuestionsDump() +
+              "\nCONTEXT_HOOK:\n" + state.lastContext + "\n";
+              state.lastOutput = state.lastOutput.replace(/<SYSTEM>[\s\S]*?<\/SYSTEM>/g, '').trim();
+  } else if (state.debugMode) {
+    sysOut += "=== /debug on (disable these with /debug off) ===\n";
+    sysOut += "info.actionCount = " + info.actionCount +
+              state.debugOutput +
+              "Defines:\n" + JackDumpDefs(state.JackDefsMap) + "\n" +
+              JackAiQuestionsDump() + "\n";
+              state.lastOutput = state.lastOutput.replace(/<SYSTEM>[\s\S]*?<\/SYSTEM>/g, '').trim();
+  }
+
+  if (sysOut) {
+    text += "\n<SYSTEM>\n" + sysOut + "</SYSTEM>\n";
+  }
+
+  return text;
+}
+
 // === Preprocess context text ===
-function JackPreprocess(input) {
-  const lines = (input || "").split(/\r?\n/);
+function JackPreprocess(text) {
+
+  // Remove any SYSTEM-messages
+  text = text.replace(/<SYSTEM>[\s\S]*?<\/SYSTEM>/g, '');
+
+  const lines = (text || "").split(/\r?\n/);
   const authorsNotePattern = /^\[Author's note:\s*/i;
   const out = [];
   const active = [true];
@@ -344,6 +452,17 @@ function JackPreprocess(input) {
         const m = rest.match(/^([A-Za-z0-9_]+)(?:\s+(.*))?$/s);
         if (m) {
           let key = m[1];
+          /*let rawVal = m[2] || "";
+          let val = "";
+          // support quoted values with single or double quotes (keep internal spaces)
+          let q = rawVal.trim();
+          if ((q.startsWith("'") && q.endsWith("'")) || (q.startsWith('"') && q.endsWith('"'))) {
+            val = q.slice(1,-1);
+          } else if (q === "") {
+            val = state.JackDefsMap[key] || "";
+          } else {
+            val = JackEvalValue(rawVal);
+          }*/
           let val = m[2] || "";
           val = stripQuotes(JackEvalValue(val.trim()));
           state.JackDefsMap[key] = val;
@@ -391,6 +510,19 @@ function JackPreprocess(input) {
       case "#endif": {
         if (active.length > 1) active.pop();
         out.push(rest);
+        break;
+      }
+      case "#output": {
+        if (!parent) break;
+        let m = rest.match(/^(\S+)(?:\s+(\S+))?(?:\s+(\S+))?/);
+        if (m) {
+          let cmd = m[1];
+          let arg1 = m[2] ? stripQuotes(JackEvalValue(m[2])) : "";
+          let arg2 = m[3] ? stripQuotes(JackEvalValue(m[3])) : "";
+          JackAddOutputCommand(cmd, arg1, arg2);
+        } else {
+          state.debugOutput += "Invalid #OUTPUT format: " + rest + "\n";
+        }
         break;
       }
       case "#ask":
@@ -475,7 +607,20 @@ function JackPreprocess(input) {
     }
     out.push("[AI guidance for continuation: " + guidance + " ]");
   }
-  return out.join("\n");
+
+  /* TODO: check unbalanced condition stack
+  if (active.length !== 1) {
+    let err = "Unbalanced directives: missing #endif (depth=" + (active.length-1) + ")\n";
+    state.debugOutput += err;
+    state.JackDefsMap.DEBUG += err;
+  }*/
+
+  text = out.join("\n") 
+
+  // Updating context in case user doesn't do this.
+  state.lastContext = text;
+
+  return text;
 }
 
 // === Macro substitution and special { ... } evaluation ===
