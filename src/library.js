@@ -462,6 +462,7 @@ function JackPreprocess(text) {
       case "#end": {
         state.JackRemoveCommentedLines = false;
         state.JackInBlockComment = false;
+        state.JackDefsNamespace = "";
         break;
       }
       case "#define":
