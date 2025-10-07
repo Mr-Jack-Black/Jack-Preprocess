@@ -1,5 +1,5 @@
 // === Global variables ===
-const VERSION = "v0.6-alpha";
+const VERSION = "v0.6.1-alpha";
 
 // Not required by the library
 state.lastContext = state.lastContext || '';
