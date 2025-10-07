@@ -30,6 +30,11 @@ state.JackOutputCommands = state.JackOutputCommands || [];
 state.JackRemoveCommentedLines = state.JackRemoveCommentedLines || false;
 state.JackInBlockComment = state.JackInBlockComment || false;
 
+// Fix AI Dungeon Bug where AI returns something funny
+globalThis.text ??= "";
+if (typeof text === "number") text = text.toString();
+text = ((typeof text === "string") && text) || "\n";
+
 // === Expected type prompts ===
 const JACK_PROMPT_BOOL   = "Answer only with '0' for false/no or '1' for true/yes.";
 const JACK_PROMPT_INT    = "Answer only with a single integer number.";
