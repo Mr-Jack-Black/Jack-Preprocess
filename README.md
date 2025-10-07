@@ -1,13 +1,5 @@
 # Jack-Preprocess for AI Dungeon
 
-## Version Info
-* v0.6-alpha (7.10.2025): Added support for NAMESPACE and "local" variables.
-* v0.5-alpha (6.10.2025): Fixed problem where system messages were not removed
-
-## Known Bugs
-1. If there would be multiple system messages the regular expressions fail to remove them. Current solution is to make sure that there is only one.
-2. Questions for AI #ask/#asking work but robustness is not guaranteed. These need work.
-
 ## Key Features
 
 `JackPreprocess` is a preprocessor for AI Dungeon context scripts.
@@ -462,5 +454,21 @@ Lisa feels a chill as she realizes she is being stalked.
 ```
 
 ---
+## Credits
 
+My big thanks go to everyone who has helped to develop, test or debug the script in the great AI Dungeon community, and to my wife!
+
+People contributing to testing and debug:
+**snipercup**
+
+---
+## Version Info
+* v0.6-alpha (7.10.2025): Added support for NAMESPACE and "local" variables.
+* v0.5-alpha (6.10.2025): Fixed problem where system messages were not removed
+
+## Known Bugs
+1. If there would be multiple system messages the regular expressions fail to remove them. Current solution is to make sure that there is only one.
+2. Questions for AI `#ask/#asking` work but robustness is not guaranteed. These need work. Seems like AI model sometimes fails to return anything creating a red popup "Error continuing story.  No text output received.  Modify your input and try again."
+---
 Please visit Discord/AI Dungeon for more discussion about this script.
+
