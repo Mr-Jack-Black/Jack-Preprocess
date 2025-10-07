@@ -8,18 +8,19 @@ It works like a simplified C preprocessor and lets you:
 * Define, update, and remove variables dynamically (#define, #set, #undef, #append)
 * Conditional inclusion of text blocks (#if, #elif, #else, #endif, #ifdef, #ifndef)
 * Inline arithmetic and expression evaluation (+, -, *, /, ())
-* Macro substitution with {KEY} syntax for variables
+* Macro substitution with {VARIABLE_NAME} syntax for variables
 * Predefined state variables (TURN, NEXT, DEBUG, etc.) updated automatically
 * AI-assisted variables via #ask, #asking, #refresh
 * Story guidance scheduling with #next, #scene
 * Debug logging with #debug
 * Extensible macros such as P() and RND()
 
-It is intended to run for text in **context-hook**, so it processes everything in the AI context before it is sent to the model:
+It is intended to run for text in **context-hook**, so it processes everything in the AI context before it is sent to the model.
 
+Order of processing:
 1. Plot Essentials
 2. Triggered Story Cards (World Lore)
-3. Author’s Note
+4. Author’s Note
 
 WARNING: Remember to have `#endif` after conditional blocks. Not having it at end of Plot Essentials will cause entire content to be excluded including user input.
 
@@ -234,6 +235,12 @@ Example:
 Requests the AI to answer a question. Answer is stored in **VARIABLE**.
 * With `#ask`, the answer persists once found.
 * With `#asking`, the question is repeated until asked again (**COOLDOWN**=10).
+
+Every **VARIABLE** you want to update will take one slot on the asking queue, and only 1 of them is served every 10 turns so use carefully!
+
+Hint: Performing regular expression search or matching on **OUTPUT**-variable is another possibility.
+
+WARNING: Avoid over using these primitives. By default the Preprocessor will ask only one question every 10 turns. Each variable will take one slot in the queue.
 
 **type** is expected answer: `bool`, `int`, `string`, `name`, or `none`
   * `bool` → AI must answer yes/no → stored as `1` or `0`
@@ -452,6 +459,14 @@ Context sent to AI (assuming AI answered yes):
 Lisa is an adult.
 Lisa feels a chill as she realizes she is being stalked.
 ```
+---
+## Feature Requests
+
+Features:
+1. Ability to perform text search/matching to story context (memories, recent story). Now this is possible only via AI questions. However, previous AI output is available in OUTPUT-variable already.
+
+Robustness:
+1. Give a warning if user is pushing more AI questions than the system is able to process. (Questions get queued but user can push potentially multiple questions in a turn - and system can ask only 1 question on every 10 turns).
 
 ---
 ## Credits
