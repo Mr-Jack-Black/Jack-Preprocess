@@ -666,7 +666,9 @@ function JackPreprocess(text) {
   text = out.join("\n") 
 
   // Updating context in case user doesn't do this.
-  state.lastContext = text;
+  if (state.deepDebugMode) {
+    state.lastContext = text;
+  }
 
   return text;
 }
