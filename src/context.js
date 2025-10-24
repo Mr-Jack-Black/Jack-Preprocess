@@ -12,7 +12,9 @@ const modifier = (text) => {
     text = JackAskAiQuestion(text);
 
     // Optional: Store Context (only used for deep debug)
-    state.lastContext = text;
+    if (state.deepDebugMode) {
+        state.lastContext = text;
+    }
     
     //return {text, stop};
     return {text};
