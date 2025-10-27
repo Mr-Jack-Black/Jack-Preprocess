@@ -6,7 +6,12 @@
 
 // === OUTPUT-hook (data sent to user output) ===
 const modifier = (text) => {
-  
+/*
+  // Optional: LewdLeah Auto-Cards
+  if (!JackThereIsActiveAiQuestion()) {
+    text = AutoCards("output", text);
+  }
+*/
   // Needed to support #ASK and #REFRESH directives
   // - AI answer expected on input
   // - Returns sometimes "< click continue >"
@@ -15,9 +20,6 @@ const modifier = (text) => {
 
   // Needed for /debug and for #OUTPUT and #DEBUG directives
   text = JackOutputProcess(text);
-
-  // Optional: The content of lastOutput is stored to {OUTPUT
-  //state.lastOutput = text;
   
   return {text};
 }
