@@ -53,41 +53,6 @@ function JackCmdCheck(text) {
     return text.split(/\/debug /i)[0].trim();
 }
 
-function JackAppendSuccessInfo(text) {
-    const sayPattern = /^>\s*You\s+\w+/i;
-    const doPattern = /^>/;
-
-    function matchOrChance(prob, inputText) {
-        if (!prob) return false;
-        prob = stripQuotes(JackEvalValue(prob));
-        if (/^\/.*\/[gimsuy]*$/.test(prob)) {
-            const regex = new RegExp(prob.slice(1, prob.lastIndexOf('/')), prob.slice(prob.lastIndexOf('/') + 1));
-            return regex.test(inputText);
-        }
-        const val = parseFloat(prob);
-        return !isNaN(val) && Math.random() < val;
-    }
-
-    if (sayPattern.test(text)) {
-        if (state.JackSayFailText && matchOrChance(state.JackSayFailRate, text)) {
-            text += state.JackSayFailText;
-        } else if (state.JackSayCritSuccessText && matchOrChance(state.JackSayCritSuccessRate, text)) {
-            text += state.JackSayCritSuccessText;
-        }
-        state.JackSayFailRate = '';
-        state.JackSayCritSuccessRate = '';
-    } else if (doPattern.test(text)) {
-        if (state.JackDoFailText && matchOrChance(state.JackDoFailRate, text)) {
-            text += state.JackDoFailText;
-        } else if (state.JackDoCritSuccessText && matchOrChance(state.JackDoCritSuccessRate, text)) {
-            text += state.JackDoCritSuccessText;
-        }
-        state.JackDoFailRate = '';
-        state.JackDoCritSuccessRate = '';
-    }
-    return text;
-}
-
 // === INPUT-hook (data from user input) ===
 const modifier = (text) => {
 
@@ -95,9 +60,8 @@ const modifier = (text) => {
     // (#debug-primitive works even without this)
     text = JackCmdCheck(text);
 
-    // Optional: Used for input-modify primitives
-    // Used by #user_success/#user_fail/#user_trusted/#user_suspicious
-    text = JackAppendSuccessInfo(text);
+    // Optional: LewdLeah Auto-Cards
+    //text = AutoCards("input", text);
 
     // Optional: Store input to be available in {INPUT}
     state.lastInput = text;
