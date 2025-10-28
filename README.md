@@ -56,7 +56,7 @@ WARNING: Remember to have `#endif` after conditional blocks. Not having it at en
 | NEXT         | Appended as `[AI guidance for continuation: ...]`.                          |
 | TURNNXT      | Used internally by `#next (delay)` to clear expired guidance.               |
 | DEBUG        | Holds debug messages, cleared each turn.                                    |
-| LAST_OUTPUT  | Holds last output to player                                                 |
+| LAST_OUTPUT  | Holds new output that was sent to player last turn                          |
 | USER_INPUT   | Holds user input from the same turn                                         |
 | *COOLDOWN*   | Number of turns before AI can be queried again, default is 10.              |
 
