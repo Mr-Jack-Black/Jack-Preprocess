@@ -4,25 +4,35 @@
 
 `JackPreprocess` is a preprocessor for AI Dungeon context scripts.
 
-It works like a simplified C preprocessor and lets you:
-* Define, update, and remove variables dynamically (#define, #set, #undef, #append)
-* Conditional inclusion of text blocks (#if, #elif, #else, #endif, #ifdef, #ifndef)
-* Inline arithmetic and expression evaluation (+, -, *, /, ())
-* Macro substitution with {VARIABLE_NAME} syntax for variables
-* Predefined state variables (TURN, NEXT, DEBUG, etc.) updated automatically
-* AI-assisted variables via #ask, #asking, #refresh
-* Story guidance scheduling with #next, #scene
-* Debug logging with #debug
-* Extensible macros such as P() and RND()
+The main purpose of the preprocessor is to allow conditionally hiding portions of Plot Essentials, Story Cards and Author's note -text from the AI. This helps to create stories where the
+plot components are dynamically revealed, or even changed. Note that when story has progressed
+AI becomes insensitive for elements put in Plot Essentials and Story Cards. Mechanisms for giving
+strong guidance to AI are also provided.
 
-It is intended to run for text in **context-hook**, so it processes everything in the AI context before it is sent to the model.
+It works like a simplified C preprocessor and lets you:
+* Conditional inclusion of story text (#if, #elif, #else, #endif, #ifdef, #ifndef)
+* Guide AI story progression (#next "what should happen")
+* Add extra info directly the story output (#output)
+* Define, update, and remove variables dynamically (#define, #set, #undef)
+* Inline arithmetic and expression evaluation (+, -, *, /, ())
+* Varible substition to text {VARIABLE_NAME} syntax
+* Debug logging with #debug
+* Using pre-defined marcros to create random events and probabilities, P(10%) and RND()
+
+All the features described above are included in the reduced **Lite** version (`library_lite.js`).
+**Full** version (`library.js`) contains more features like possibility to ask questions from AI
+to get information on what is happening in the story.
+
+Features only available in the **Full Version** are listed in *cursive*. These include:
+ * Asking story status from the AI (#ask, #asking)
+ * Support C-style commenting that are not shown to the AI (//, /*, */)
 
 Order of processing:
 1. Plot Essentials
 2. Triggered Story Cards (World Lore)
 4. Author’s Note
 
-WARNING: Remember to have `#endif` after conditional blocks. Not having it at end of Plot Essentials will cause entire content to be excluded including user input.
+WARNING: Remember to have `#endif` after conditional blocks. Not having it at end of Plot Essentials may cause entire content to be excluded including user input.
 
 ---
 
@@ -40,20 +50,43 @@ WARNING: Remember to have `#endif` after conditional blocks. Not having it at en
 ## 1. Variable assignment
 
 ### Reserved Variables
-| Variable  | Description                                                                 |
-|-----------|-----------------------------------------------------------------------------|
-| TURN      | Starts at 0, increments each call.                                          |
-| NEXT      | Appended as `[AI guidance for continuation: ...]`.                          |
-| TURNNXT   | Used internally by `#next (delay)` to clear expired guidance.               |
-| DEBUG     | Holds debug messages, cleared each call.                                    |
-| COOLDOWN  | Number of turns before AI can be queried again, default is 10.              |
-| INPUT     | Holds last user input                                                       |
-| OUTPUT    | Holds last output to player                                                 |
+| Variable    | Description                                                                 |
+|-------------|-----------------------------------------------------------------------------|
+| TURN        | Starts at 0, increments each turn.                                          |
+| NEXT        | Appended as `[AI guidance for continuation: ...]`.                          |
+| TURNNXT     | Used internally by `#next (delay)` to clear expired guidance.               |
+| DEBUG       | Holds debug messages, cleared each turn.                                    |
+| OUTPUT      | Holds last output to player                                                 |
+| INPUT       | Holds user input from the same turn                                         |
+| *COOLDOWN*  | Number of turns before AI can be queried again, default is 10.              |
+
+### Variable evaluation
+
+
+```
+Mary is {MARY_AGE} years old.
+```
+
+Use curly brackets {} to reference variable values ({variable_name}). This makes preprocessor
+to evaluate the variable value.
+
+### Local variables via namespaces
+```
+#namespace StoryCardX
+#define MARY_AGE 24
+Mary is {local:MARY_AGE} years old.
+```
+Preprocessor does not support true local variables but it provides namespace definitions in order
+to allow using same code in multiple story cards just by defining different namespace.
+
+WARNING: If using #namespace it needs to be set on every plot component as the previous namespace may
+bleed to the next components.
 
 ### #define / #set
 
 ```
 #define VARIABLE_NAME value
+#set VARIABLE_NAME value
 ```
 
 Defines new *VARIABLE_NAME* (or updates existing) with given *value* or *{expression}*.
@@ -65,7 +98,6 @@ Example:
 #define A 3
 #define SUM {A} + 2
 #define ANSWER "SUM: A + 2 = {SUM}"
-// ANSWER = "SUM: A + 2 = 5"
 ```
 
 ### #undef
@@ -75,12 +107,6 @@ Example:
 ```
 
 Removes a previously defined variable.
-
-Example:
-
-```
-#undef ANSWER
-```
 
 ### #append
 
@@ -98,13 +124,24 @@ Example:
 // LOG = "Start, Step 1"
 ```
 
-### `#output {type} {text} {delimiter}`
+### `#output [operation] text [delimiter/pattern]`
 
-The `#output` directive queues an output modification command that is applied during text post-processing. It supports three arguments:
+The `#output` directive queues an output modification command that is applied during text post-processing for the AI generated output. It supports three arguments:
 
-1. **type** – operation to perform (`prepend`, `append`, `replace`, `swap`, `remove`, `clear`, `stop`).
+1. **cmd** – operation to perform (`prepend`, `append`, `clear`, `replace`, `swap`, `remove`).
 2. **text** – primary string or pattern used by the operation.
 3. **delimiter** – optional string placed before and after the text when applicable.
+
+If giving only one argument then cmd defaults to `prepend` and only text argument gets applied.
+
+Multiple `#output` directives can be stacked. The output processing is done on the same order
+than the directives are.
+
+(!) TODO: Add support for flushing previous commands.
+(!) TODO: Argument order for replace is not logical and is to be changed on the next release.
+
+NOTE: Full version will add the prepended output also to the context (Recent Story) that is sent
+to the AI so that AI generates smooth continuation. Lite version does not do such smart look-ahead.
 
 Operations:
 
@@ -114,9 +151,6 @@ Operations:
 * `swap {from} {to}` → Replaces all `{from}` substrings with `{to}`.
 * `remove {text}` → Deletes all occurrences of `{text}`.
 * `clear` → Clears the entire output.
-* `stop` → Stops processing any further queued output commands.
-
-Multiple `#output` directives can be stacked. They are executed in the order they were added.
 
 ### #debug
 
@@ -165,19 +199,22 @@ Evaluates given expression. Includes enclosed text if condition is true. `#elif`
 ### #namespace
 
 ```
-#namespace {name of local namespace}
-#namespace gobal
+#namespace global
+#define A 5
+#namespace ns_name1
+#define A 15
+// {A} == 5
+// {local:A} == 15
 ```
-Defines namespace enabling local variables which must use format `{local:COUNT}` or `{L:COUNT}`.
-Not these variables will be different depending on NAMESPACE so code can be copied as it is.
+Defines namespace enabling local variables which must use format `{local:COUNT}` or `{L:COUNT}`
+when evaluating them. This allows copying same code to multiple locations with separated namespace.
 
-NAMESPACE is sticky and will bleed over to next StoryCards. Thus if you use #namespace be sure to define it separately on every code area.
-
-Note that **#begin** and **#end** directives will reset the NAMESPACE back to global.
+NAMESPACE is sticky and bleeds over to next StoryCards. Thus if you use #namespace be sure to define it separately on every code area.
 
 ---
 
-## 3. Commenting
+## *3. Commenting*
+
 ```
 #begin
 // Comments are possible only after #begin directive
@@ -195,24 +232,33 @@ This will be visible for AI. // Comment here is NOT allowed. This will be visibl
 #end
 ```
 
+Commented lines are not processed and they are not visible for the AI.
+
+NOTE: Comments are not supported by the Lite version. Any extra characters in front of
+a #-directive will cause directive not to be evaluated. (But AI will see it!)
+
 ---
 
 ## 4. Story control
 
-### #next / #scene
+### #next / *#scene*
 
 ```
 #next text
 #next (delay) text
 ```
 
-Schedules text to appear on the next turn. Optional *delay* sets how many turns later.
+Schedules text to appear on the next turn. Optional *delay* sets how many turns the
+guidance is visible to the AI. Any new #next directive will overwrite the previous.
 
 ```
 #scene text
 ```
 
-Persistent addition to the story context. Unlike `#next`, it is not cleared automatically each turn.
+Persistent addition to the story context. Unlike `#next`, it is cleared automatically.
+Any new #scene text will overwrite the previous.
+
+NOTE: Scene-text is added after Author's note but before front memory.
 
 Example:
 
@@ -249,11 +295,9 @@ WARNING: Avoid over using these primitives. By default the Preprocessor will ask
   * `string` → AI must return a plain string
   * `none` → treated like `bool`, but defines the variable only if answer is positive
 
-WARNING: These are not yet very realiable. Recomend using bool, int, or none mostly.
+WARNING: These are not very realiable. Recomend using bool, int, or none mostly.
 
 NOTE: COOLDOWN variable can be set to zero if wanting to force answer immediately.
-
-TODO: Rewrite cooldown logic and add directives for better control.
 
 Examples:
 
@@ -369,7 +413,7 @@ NOTE: Debug requires adding all files. See installation.
 * `/debug KEY=42` → set variable
 * `/debug KEY=null` → undefine variable
 
-Debug messages are wrapped in `<SYSTEM> … </SYSTEM>` and automatically stripped from the context by `JackRemoveSystemMsg`.
+Debug messages are wrapped in `<SYSTEM> … </SYSTEM>` and automatically stripped from the context by `JackPreprocessor()`.
 
 ---
 
@@ -446,40 +490,32 @@ Input (e.g. Plot Essentials):
 #else
 {NAME} is a child.
 #endif
-
-#ask THREAT "Is someone following Lisa?" (none)
-#if THREAT
-Lisa feels a chill as she realizes she is being stalked.
-#endif
-```
-
-Context sent to AI (assuming AI answered yes):
-
-```
-Lisa is an adult.
-Lisa feels a chill as she realizes she is being stalked.
 ```
 ---
-## Feature Requests
+## Features Planned
+
+Note: Some directives are not yet documented here due to their premature-state.
 
 Features:
 1. Ability to perform text search/matching to story context (memories, recent story). Now this is possible only via AI questions. However, previous AI output is available in OUTPUT-variable already.
+2. Ability to select some directives to run on the output-hook, so that output can better modified.
 
 Robustness:
-1. Give a warning if user is pushing more AI questions than the system is able to process. (Questions get queued but user can push potentially multiple questions in a turn - and system can ask only 1 question on every 10 turns).
+1. #ask directives need more work to improve robustness.
 
 ---
 ## Credits
 
-My big thanks go to everyone who has helped to develop, test or debug the script in the great AI Dungeon community, and to my wife!
+My big thanks go to everyone who has helped to propose ideas, develop, test or debug the script
+in the great AI Dungeon community, and to my wife!
 
-People contributing to testing and debug:
+People contributing to debug and fixing bugs:
 **snipercup**
 
 ---
 ## Version Info
-* v0.6-alpha (7.10.2025): Added support for NAMESPACE and "local" variables.
-* v0.5-alpha (6.10.2025): Fixed problem where system messages were not removed
+* v1.2.x-beta (28.10.2025): First release for Lite version, after major clean-up on Full version. 
+* v0.6-alpha   (7.10.2025): Added support for NAMESPACE and "local" variables.
 
 ## Known Bugs
 1. If there would be multiple system messages the regular expressions fail to remove them. Current solution is to make sure that there is only one.
