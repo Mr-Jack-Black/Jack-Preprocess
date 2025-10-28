@@ -267,6 +267,14 @@ Example:
 #scene "Background story always present."
 ```
 
+### #front_memory
+
+```
+#front_memory text
+```
+
+Adds text to `state.memory.frontMemory`. This comes very last in the context. Use with caution.
+
 ---
 
 ## 4. AI Interaction
@@ -348,6 +356,13 @@ Local variables are indicated by having `local:` or `L:` prefix. These prefixes 
 
 ## 6. Built-in Functions
 
+### MIN/MAX/AVG(a,b,c,...)
+Returns minimum/maximum/average of the given comma separated arguments.  
+Example:  
+`MAX(1,23,3)` → `23`
+
+---
+
 ### TOREGEX(text, flags)
 Creates a regex literal string from the given text and optional flags.  
 Example:  
@@ -402,6 +417,8 @@ Example:
 * **Story** input is included as written.
 * **Say/Do** input is prefixed with `>` (so `#` macros won’t work inside, but `{VAR}` substitution still does).
 * Macro replacement is invisible to the user, since it happens in the context.
+
+(!) Only Lite-version processes user input at the moment.
 
 ### Debug
 
@@ -497,13 +514,19 @@ Input (e.g. Plot Essentials):
 Note: Some directives are not yet documented here due to their premature-state.
 
 Features:
-1. Ability to perform text search/matching to story context (memories, recent story). Now this is possible only via AI questions. However, previous AI output is available in OUTPUT-variable already.
+1. Ability to perform text search/matching to story context (memories, recent story). Now this is possible only via AI questions. However, previous AI output is available in LAST_OUTPUT-variable.
 2. Ability to select some directives to run on the output-hook, so that output can better modified.
-
+3. Output-modification command to flush (override) all previous output modifications.
+4. Ability to create/modify story cards (?)
+5. Compression for script data.
+   
 Robustness:
 1. #ask directives need more work to improve robustness.
+2. Output `stop` command may cause memory leak, if used. (command removed from documentation to supress usage)
+3. Improve test script to cover more commands.
 
 ---
+
 ## Credits
 
 My big thanks go to everyone who has helped to propose ideas, develop, test or debug the script
@@ -513,13 +536,16 @@ People contributing to debug and fixing bugs:
 **snipercup**
 
 ---
+
 ## Version Info
-* v1.2.x-beta (28.10.2025): First release for Lite version, after major clean-up on Full version. 
+* v1.1.x-beta (28.10.2025): First release for Lite version, after major clean-up on Full version. 
 * v0.6-alpha   (7.10.2025): Added support for NAMESPACE and "local" variables.
 
 ## Known Bugs
-1. If there would be multiple system messages the regular expressions fail to remove them. Current solution is to make sure that there is only one.
-2. Questions for AI `#ask/#asking` work but robustness is not guaranteed. These need work. Seems like AI model sometimes fails to return anything creating a red popup "Error continuing story.  No text output received.  Modify your input and try again."
+1. Full version does not evaluate {VAR} statements in user input.
+2. Questions for AI `#ask/#asking` work but AI still stumbles too often.
+
 ---
+
 Please visit Discord/AI Dungeon for more discussion about this script.
 
