@@ -1,8 +1,19 @@
 #if {TURN}==1
+/*
+// Lite Version Does not support comment removal!
+#ifdef LITE
+  #debug LITE-Version testing
+#endif
+#ifndef LITE
+  #debug ERROR: Block comment executed with FULL-version!
+#endif
+*/
+
   #set A 5
   #set B 7
   #define SUM {A}+{B}
   #define D {SUM}*2
+  #set E {MAX({{A}+{B}},{A},{{A}+10})}
 
   #if {SUM}==12
     #debug PASS: arithmetic addition
@@ -16,6 +27,13 @@
     #debug FAIL: arithmetic multiplication (D={D})
   #endif
 
+  #if {E}==15
+    #debug PASS: complex macro equation using MAX()
+  #else
+    #debug FAIL: complex macro equation using MAX() (E={E})
+  #endif
+
+#ifndef LITE
   #append STR Hello
   #append STR  World
   #if "{STR}"=="HelloWorld"
@@ -23,6 +41,7 @@
   #else
     #debug FAIL: string append (STR={STR})
   #endif
+#endif
 
   #undef TEMP
   #ifndef TEMP
@@ -51,9 +70,11 @@
     #debug FAIL: SUM persistence (SUM={SUM})
   #endif
 
+  // #debug FAIL: //-comment line executed
+  /* #debug FAIL: /*-comment line executed */
+
   #debug --- END TURN2 ---
 #endif
-
 
 #if {TURN}==3
   #if {D}/{A}==4.8
@@ -63,7 +84,7 @@
   #endif
 
   #define E {D}-{SUM}
-  #if {E}==12
+  #if {E} == 12
     #debug PASS: subtraction D-SUM
   #else
     #debug FAIL: subtraction D-SUM (E={E},D={D},SUM={SUM})
@@ -73,6 +94,18 @@
     #debug PASS: STR still defined
   #else
     #debug FAIL: STR missing
+  #endif
+
+  #namespace here
+  #define local:A 9
+  #ns not_here
+  #set local:A 6
+
+  #ns here
+  #if {local:A}==9
+    #debug PASS: Variable namespace
+  #else
+    #debug FAIL: Variable namespace (local:A={local:A})
   #endif
 
   #debug --- END TURN3 ---

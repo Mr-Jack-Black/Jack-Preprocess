@@ -20,18 +20,20 @@ function JackCmdCheck(text) {
     //lower = lower.replace(/<SYSTEM>[\s\S]*?<\/SYSTEM>/g, '');
 
     if (lower.includes("/debug off")) {
-        state.debugMode = false;
-        state.deepDebugMode = false;
+        state.verboseLevel = LOG_SYS_ERROR;
         //state.lastOutput = state.lastOutput.replace(/<SYSTEM>[\s\S]*?<\/SYSTEM>/g, '').trim();
     } else if (lower.includes("/debug on")) {
-        state.debugMode = true;
-        state.deepDebugMode = false;
+        state.verboseLevel = LOG_STORY;
     } else if (lower.includes("/debug deep")) {
-        state.debugMode = true;
-        state.deepDebugMode = true;
+        state.verboseLevel = LOG_CONTEXT;
     } else if (lower.includes("/debug simple")) {
-        state.debugMode = true;
-        state.deepDebugMode = false;
+        state.verboseLevel = LOG_VAR;
+    } else if (lower.includes("/log off")) {
+        state.verboseLevel = LOG_OFF;
+    } else if (lower.includes("/log error")) {
+        state.verboseLevel = LOG_ERROR;
+    } else if (lower.includes("/version")) {
+        state.verboseLevel = LOG_VERSION;
     }
 
     // Match generic "/debug key=value"
@@ -57,6 +59,9 @@ const modifier = (text) => {
     // Optional: Only needed for deeper debug
     // (#debug-primitive works even without this)
     text = JackCmdCheck(text);
+
+    // Optional: LewdLeah Auto-Cards
+    //text = AutoCards("input", text);
 
     // Optional: Store input to be available in {INPUT}
     state.lastInput = text;
