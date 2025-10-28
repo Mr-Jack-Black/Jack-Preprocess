@@ -6,7 +6,7 @@ const VERSION = "v1.1.7-beta-lite";
 
 state.lastOutput = state.lastOutput || '';
 state.debugOutput = state.debugOutput || '';
-state.JackDefsMap = state.JackDefsMap || { TURN: "-1" };
+state.JackDefsMap = state.JackDefsMap || { TURN: "-1", LITE: "true" };
 state.JackDefsNamespace = state.JackDefsNamespace || '';
 state.JackOutputCommands = state.JackOutputCommands || [];
 
