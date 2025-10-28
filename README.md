@@ -50,15 +50,15 @@ WARNING: Remember to have `#endif` after conditional blocks. Not having it at en
 ## 1. Variable assignment
 
 ### Reserved Variables
-| Variable    | Description                                                                 |
-|-------------|-----------------------------------------------------------------------------|
-| TURN        | Starts at 0, increments each turn.                                          |
-| NEXT        | Appended as `[AI guidance for continuation: ...]`.                          |
-| TURNNXT     | Used internally by `#next (delay)` to clear expired guidance.               |
-| DEBUG       | Holds debug messages, cleared each turn.                                    |
-| OUTPUT      | Holds last output to player                                                 |
-| INPUT       | Holds user input from the same turn                                         |
-| *COOLDOWN*  | Number of turns before AI can be queried again, default is 10.              |
+| Variable     | Description                                                                 |
+|--------------|-----------------------------------------------------------------------------|
+| TURN         | Starts at 0, increments each turn.                                          |
+| NEXT         | Appended as `[AI guidance for continuation: ...]`.                          |
+| TURNNXT      | Used internally by `#next (delay)` to clear expired guidance.               |
+| DEBUG        | Holds debug messages, cleared each turn.                                    |
+| LAST_OUTPUT  | Holds last output to player                                                 |
+| USER_INPUT   | Holds user input from the same turn                                         |
+| *COOLDOWN*   | Number of turns before AI can be queried again, default is 10.              |
 
 ### Variable evaluation
 
