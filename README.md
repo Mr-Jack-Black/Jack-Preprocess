@@ -108,22 +108,6 @@ Example:
 
 Removes a previously defined variable.
 
-### #append
-
-```
-#append VARIABLE_NAME text
-```
-
-Appends given *text* (or *{expression}*) to the variable’s current value.
-
-Example:
-
-```
-#define LOG "Start"
-#append LOG ", Step 1"
-// LOG = "Start, Step 1"
-```
-
 ### `#output [operation] text [delimiter/pattern]`
 
 The `#output` directive queues an output modification command that is applied during text post-processing for the AI generated output. It supports three arguments:
@@ -166,6 +150,22 @@ Example:
 
 ```
 #debug "Value of A={A}"
+```
+
+### *#append* (only in Full version)
+
+```
+#append VARIABLE_NAME text
+```
+
+Appends given *text* (or *{expression}*) to the variable’s current value.
+
+Example:
+
+```
+#define LOG "Start"
+#append LOG ", Step 1"
+// LOG = "Start, Step 1"
 ```
 
 ---
@@ -241,7 +241,7 @@ a #-directive will cause directive not to be evaluated. (But AI will see it!)
 
 ## 4. Story control
 
-### #next / *#scene*
+### #next
 
 ```
 #next text
@@ -250,6 +250,8 @@ a #-directive will cause directive not to be evaluated. (But AI will see it!)
 
 Schedules text to appear on the next turn. Optional *delay* sets how many turns the
 guidance is visible to the AI. Any new #next directive will overwrite the previous.
+
+### *#scene* (only in Full version)
 
 ```
 #scene text
@@ -266,6 +268,17 @@ Example:
 #next (2) "This direction will be shown for two turns."
 #scene "Background story always present."
 ```
+
+### *#fact* (only in Full version)
+
+```
+#fact text
+```
+
+Each fact will be added after Author's note as a list. The fact list is cleared every
+turn so they need to be applied every turn.
+
+Use only to state facts that are relevant for AI to take into account for next output generation.
 
 ### #front_memory
 
