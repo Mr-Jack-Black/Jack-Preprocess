@@ -2,7 +2,7 @@
 // Pick one of them - not both!
 // The lite version has limited base functionality only.
 // Lite version does NOT require Ai-function calls into context/output-hooks.
-const VERSION = "v1.1.7-beta-lite";
+const VERSION = "v1.1.8-beta-lite";
 
 state.lastOutput = state.lastOutput || '';
 state.debugOutput = state.debugOutput || '';
@@ -100,7 +100,7 @@ function JackPreprocessDirectives(text) {
     // Handle non-command context
     if (!t.startsWith("#")) {
       if (active[active.length - 1]) {
-        out.push(rawLine);
+        out.push(JackEvalValue(rawLine));
       }
       continue;
     }
