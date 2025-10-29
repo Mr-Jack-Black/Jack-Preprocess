@@ -1,5 +1,5 @@
 // === Global variables ===
-const VERSION = "v1.1.7-beta";
+const VERSION = "v1.1.8-beta";
 
 // Not required by the library
 state.lastOutput = state.lastOutput || '';
