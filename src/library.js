@@ -207,7 +207,7 @@ function JackPreprocessDirectives(text) {
     // Handle non-command context
     if (!t.startsWith("#")) {
       if (active[active.length - 1]) {
-        out.push(rawLine);
+        out.push(JackEvalValue(rawLine));
       }
       continue;
     }
