@@ -1,5 +1,5 @@
 // === Global variables ===
-const VERSION = "v1.2.2-beta";
+const VERSION = "v1.2.4-beta";
 
 // Not required by the library
 state.lastOutput = state.lastOutput || '';
@@ -88,8 +88,8 @@ function JackPreprocessor(text) {
     }
   }
   // Make output prepend visible for AI in advance
-  if (state.JackOuputPrepend) {
-    context["Recent Story"] = (context["Recent Story"] || "") + state.JackOuputPrepend;
+  if (state.JackOutputPrepend) {
+    context["Recent Story"] = (context["Recent Story"] || "") + state.JackOutputPrepend;
   }
 
   if (state.JackMaxContextSize) { 
@@ -205,7 +205,7 @@ function JackPreprocessDirectives(text) {
   for (let line of lines) {
 
     let rawLine = line;
-    let t = line;
+    let t = line.trim();
 
     // Handle lines inside java block
     if (inJavaBlock && !t.startsWith("#java_end")) {
@@ -368,7 +368,6 @@ function JackPreprocessDirectives(text) {
         } else {
           JackLog(LOG_ERROR, "Unexpected #endif without matching #if: " + rawLine);
         }
-        out.push(rest);
         break;
       }
       case "#max_size:": {
@@ -639,7 +638,7 @@ function JackPreprocessDirectives(text) {
   if (prepends.length) {
     const prependBlock = prepends.join("");
     if (!state.JackOutputPrepend) state.JackOutputPrepend = "";
-    state.JackOuputPrepend = prependBlock + state.JackOuputPrepend;
+    state.JackOutputPrepend = prependBlock + state.JackOutputPrepend;
   }
 
   // Scene
@@ -791,8 +790,15 @@ function JackCheckCondition(expr) {
   try {
     expr = JackApplyMacros(expr);
 
-    // Evaluate special functions *before* quoting identifiers
+    // Evaluate special functions first
     expr = expr.replace(/\b(REGEX|INCLUDES|P|RND|SELECT)\s*\([^)]*\)/g, (m) => JackEvalSpecial(m));
+
+    // Temporarily protect quoted strings
+    const quoted = [];
+    expr = expr.replace(/"[^"]*"|'[^']*'/g, (m) => {
+      quoted.push(m);
+      return `__Q${quoted.length - 1}__`;
+    });
 
     // Quote bare identifiers safely
     expr = expr.replace(/\b([A-Za-z_][A-Za-z0-9_:.]*)\b/g, (m) => {
@@ -801,6 +807,9 @@ function JackCheckCondition(expr) {
       if (/^[0-9]/.test(m)) return m;
       return JSON.stringify(m);
     });
+
+    // Restore protected quoted strings
+    expr = expr.replace(/__Q(\d+)__/g, (_, i) => quoted[i]);
 
     return !!eval(JackFixIncompleteComparisons(expr));
   } catch (e) {
@@ -1077,8 +1086,10 @@ function LZ(compressed) {
 }
 // ======================================================
 // Store data in Story Card with compression
+
 // Saves text into a story card with given name.
 // Always overwrites existing card data or creates new one if missing.
+// Keys = ["JackText"], type = "Data".
 function saveTextToSC(card_name, text) {
   text = TOLZ(text);
   const card = {
@@ -1643,7 +1654,7 @@ function JackDebugStateSize(sysOut) {
 
   sysOut += `\nJackDefsMap: ${defsCount} vars, approx ${(defsSize / 1024).toFixed(1)} KB memory`;
   sysOut += `\nState: ${stateCount} vars, approx ${(stateSize / 1024).toFixed(1)} KB memory`;
-  sysOut += `\nMax Context limit: ${state.JackMaxContextSize} char)`;
+  if (state.JackMaxContextSize) sysOut += `\nMax Context limit: ${state.JackMaxContextSize} characters.`;
   return sysOut;
 }
 
@@ -1967,7 +1978,6 @@ function JackDetectTimeOfDay(text, threshold = 0.45, initialLabel = "") {
       return ["evening", 1.0, {}];
     }
   }
-
   const result = JackDetectCategory(text, data, threshold, [], false, initialLabel);
   return [result.label, result.probability, result.scores];
 }
