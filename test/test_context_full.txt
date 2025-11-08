@@ -73,6 +73,22 @@
   // #debug FAIL: //-comment line executed
   /* #debug FAIL: /*-comment line executed */
 
+  #if {STR} == "HelloWorld"
+    #debug PASS: Condition containing string comparisons.
+  #else
+    #debug FAIL: Condition containing string comparisons.({cond={{STR} == "HelloWorld"})
+  #endif
+  #if {A}==5 && {STR} == "HelloWorld" && true
+    #debug PASS: Condition containing strings and numbers.
+  #else
+    #debug FAIL: Condition containing strings and numbers.({cond={A}==5 && {STR} == "HelloWorld" && true})
+  #endif
+  #if INCLUDES({STR},"Hello")
+    #debug PASS: Condition using INCLUDES()
+  #else
+    #debug FAIL: Condition using INCLUDES() (cond={INCLUDES({STR},"Hello")})
+  #endif
+
   #debug --- END TURN2 ---
 #endif
 
