@@ -1,5 +1,5 @@
 // === Global variables ===
-const VERSION = "v1.1.8-beta";
+const VERSION = "v1.2.2-beta";
 
 // Not required by the library
 state.lastOutput = state.lastOutput || '';
@@ -60,11 +60,25 @@ function JackPreprocessor(text) {
 
   // Log Context that was input
   if (state.verboseLevel >= LOG_CONTEXT) {
-    state.debugOutput += "\n\nCONTEXT_IN:\n============\n" + text + "\n============\n";
+    state.debugOutput += "\nCONTEXT_IN:\n============\n" + text + "\n============\n";
   }
 
   // Split context into their sections
   let context = JackSplitContext(text);
+
+  // Update time tracking variable
+  const [time, prob] = JackDetectTimeOfDay(context["Recent Story"]);
+  state.JackDefsMap.TIME = time;
+
+  let protagonist = ["You", "you"];
+  if (state.JackDefsMap.NAME) protagonist.push(state.JackDefsMap.NAME);
+  const [loc, score] = JackDetectLocation(context["Recent Story"], context["World Lore"]);
+  state.JackDefsMap.LOCATION = loc;
+  state.JackDefsMap.LOC_SCORE = score;
+
+  // Look for #LZ_text(SC_name)#, and #LZ_begin(SC_name)#...#LZ_end#-blocks
+  // Compression-decompression of context from given story cards.
+  context["Plot Essentials"] = lzParser(context["Plot Essentials"])
 
   // Process sections in the specified order if they exist
   const preprocessOrder = ["Plot Essentials", "World Lore", "[Author's note]"];
@@ -73,7 +87,6 @@ function JackPreprocessor(text) {
       context[section] = JackPreprocessDirectives(context[section]);
     }
   }
-
   // Make output prepend visible for AI in advance
   if (state.JackOuputPrepend) {
     context["Recent Story"] = (context["Recent Story"] || "") + state.JackOuputPrepend;
@@ -94,9 +107,9 @@ function JackPreprocessor(text) {
   }
 
   // Modify User input
-  if (context["User Input"]) {
-    context["User Input"] = JackAppendSuccessInfo(context["User Input"]);
-  }
+  //if (context["User Input"]) {
+  //  context["User Input"] = JackAppendSuccessInfo(context["User Input"]);
+  //}
 
   // Merge everything back
   text = JackMergeContext(context);
@@ -115,15 +128,14 @@ function JackPreprocessor(text) {
 // === Jack Preprocessor Core
 // ======================================================
 function removeSystemTags(input) {
-  // Regex to match innermost <SYSTEM>...</SYSTEM> pairs
-  const regex = /<SYSTEM>([^<]*(?:(?!<\/?SYSTEM>)<[^<]*)*?)<\/SYSTEM>/g;
+  let prev;
   let result = input;
-  
-  // Keep replacing until no more tags are found
-  while (regex.test(result)) {
-      result = result.replace(regex, '$1');
-  }
-  
+  const regex = /<SYSTEM>(?:[^<]*|<(?!\/?SYSTEM>))*?<\/SYSTEM>/gs;
+  // Repeat until no more nested pairs remain
+  do {
+    prev = result;
+    result = result.replace(regex, '');
+  } while (result !== prev);  
   return result;
 }
 
@@ -147,6 +159,8 @@ function JackPreprocessorInit(text) {
   if (state.lastInput) {
     state.JackDefsMap.USER_INPUT = state.lastInput;
   }
+  //state.JackDefsMap.ACTION = history.type;
+  //state.JackDefsMap.ACTION_TXT = history.text;
 
   // Capture last output
   if (state.lastOutput) {
@@ -171,6 +185,7 @@ function JackPreprocessDirectives(text) {
 
   let facts = "";
   let scene = "";
+  let empty_line = true;
   let prepends = [];
 
   state.JackDefsNamespace = "";
@@ -201,13 +216,22 @@ function JackPreprocessDirectives(text) {
     // Handle comments if enabled
     if (state.JackRemoveCommentedLines) {
       t = JackStripComments(t);
-      if (!t) continue;
+    }
+
+    // Handle empty lines
+    if (!t) {
+      if (!empty_line) {
+        empty_line = true;
+        out.push("");
+      }
+      continue;
     }
 
     // Handle non-command context
     if (!t.startsWith("#")) {
       if (active[active.length - 1]) {
         out.push(JackEvalValue(rawLine));
+        empty_line = false;
       }
       continue;
     }
@@ -349,9 +373,9 @@ function JackPreprocessDirectives(text) {
       }
       case "#max_size:": {
         if (!parent) break;
-        let delay = rest ? parseInt(rest, 10) : null;
-        if (delay !== null && !isNaN(delay)) {
-          state.JackMaxContextSize = delay;
+        let val = rest ? parseInt(rest, 10) : null;
+        if (val !== null && !isNaN(val)) {
+          state.JackMaxContextSize = val;
         } else {
           JackLog(LOG_ERROR, "Unexpected #max_context_size directive.");
         }
@@ -478,6 +502,30 @@ function JackPreprocessDirectives(text) {
         facts += "- " + data + "\n";
         break;
       }
+      case "#set_location": {
+        if (!parent) break;
+        let loc = stripQuotes(rest.trim());
+        //state.JackCurrentLocation = loc;
+        state.JackDefsMap.LOCATION = loc;
+        JackLog(LOG_COMMAND, "LOCATION <- " + loc);
+        break;
+      }
+      // TODO: Add evals
+      case "#set_name": {
+        if (!parent) break;
+        let name = stripQuotes(rest.trim());
+        //state.JackProtagonistName = name;
+        state.JackDefsMap.NAME = name;
+        JackLog(LOG_COMMAND, "Protagonist Name <- " + name);
+        break;
+      }
+      case "#set_time": {
+        if (!parent) break;
+        let time = stripQuotes(rest.trim());
+        JackDefsMap.TIME = time;
+        JackLog(LOG_COMMAND, "TIME <- " + loc);
+        break;
+      }
       case "#user_success": {
         const m = rest.match(/^(\S+)(?:\s+(.*))?$/s);
         if (m) {
@@ -527,6 +575,7 @@ function JackPreprocessDirectives(text) {
         }
         break;
       }
+      case "#java_begin":
       case "#java_start": {
         if (!parent) break;
         inJavaBlock = true;
@@ -611,13 +660,6 @@ function JackPreprocessDirectives(text) {
     JackLog(LOG_STORY, "\nFacts added:\n" + facts);
   }
 
-  /* TODO: check unbalanced condition stack
-  if (active.length !== 1) {
-    let err = "Unbalanced directives: missing #endif (depth=" + (active.length-1) + ")\n";
-    state.debugOutput += err;
-    state.JackDefsMap.DEBUG += err;
-  }*/
-
   // Combine output text and do some empty space clean-up
   text = out.join("\n").trim();
   //text = out.join("\n").trim().replace(/\n{3,}/g, "\n\n");
@@ -687,41 +729,43 @@ function JackApplyMacros(text) {
     changed = false;
     text = text.replace(/\{([^{}]+)\}/g, (m, inner) => {
       inner = inner.trim();
-
-      // first recursively expand any nested macros inside the inner part
       let expanded = JackApplyMacros(inner);
 
-      // variable lookup (return stored value fully expanded)
+      // Variable lookup
       if (/^[A-Za-z0-9_:.]+$/.test(expanded)) {
         let key = JackResolveKey(expanded);
         if (state.JackDefsMap.hasOwnProperty(key)) {
           changed = true;
-          // return fully-expanded stored value (allows strings and nested macros)
           return JackApplyMacros(String(state.JackDefsMap[key]));
         }
-        return m; // undefined variable stays as-is
+        return m;
       }
 
-      // evaluate special functions (like MIN/MAX/AVG)
+      // Evaluate special functions
       try {
         let val = JackEvalSpecial(expanded);
         if (val !== expanded) {
           changed = true;
           return val;
         }
-      } catch (e) { }
+      } catch (e) {}
 
-      // evaluate numeric / arithmetic / string-expression after all substitutions
+      // Expression evaluation
       try {
-        // replace known variable names with either numeric literal or quoted string literal
-        let expr = expanded.replace(/\b([A-Za-z0-9_:.]+)\b/g, (k) => {
+        let expr = expanded.replace(/\b([A-Za-z_][A-Za-z0-9_:.]*)\b/g, (k) => {
           if (state.JackDefsMap.hasOwnProperty(k)) {
-            let v = String(state.JackDefsMap[k]);
-            // if v looks like a pure number/expression, keep as-is; otherwise quote it
-            if (/^[0-9+\-*/().\s]+$/.test(v)) return v;
-            return JSON.stringify(v);
+            let v = state.JackDefsMap[k];
+            // numeric literal
+            if (/^-?\d+(\.\d+)?$/.test(v)) return v;
+            // already quoted string
+            if (/^(['"]).*\1$/.test(v)) return v;
+            // empty string
+            if (v === "") return '""';
+            // generic string literal
+            return JSON.stringify(String(v));
           }
-          return k;
+          // unresolved → leave as quoted name
+          return JSON.stringify(k);
         });
 
         let r = eval(expr);
@@ -733,7 +777,7 @@ function JackApplyMacros(text) {
           changed = true;
           return r;
         }
-      } catch (e) { }
+      } catch (e) {}
 
       return expanded;
     });
@@ -742,60 +786,45 @@ function JackApplyMacros(text) {
   return text;
 }
 
-/*function JackApplyMacros(text) {
-  text = String(text);
-  let prev;
-  do {
-    prev = text;
-    text = text.replace(/\{([^{}]+)\}/g, (m, inner) => {
-      inner = inner.trim();
-
-      // variable lookup
-      if (/^[A-Za-z0-9_:.]+$/.test(inner)) {
-        let key = JackResolveKey(inner);
-        if (state.JackDefsMap.hasOwnProperty(key)) {
-          return state.JackDefsMap[key];
-        }
-        return m; // leave as-is if undefined
-      }
-
-      // evaluate special functions or expressions
-      try {
-        let val = JackEvalSpecial(inner);
-        // fallback: numeric expression evaluation
-        if (val === inner) {
-          let exp = inner.replace(/\b([A-Za-z0-9_]+)\b/g,
-            kk => state.JackDefsMap.hasOwnProperty(kk) ? state.JackDefsMap[kk] : kk
-          );
-          try {
-            let r = eval(exp);
-            if (typeof r === 'number' && !isNaN(r)) return String(r);
-          } catch (e) {}
-          return inner; // return original if nothing else
-        }
-        return val;
-      } catch (e) {
-        //JackLog(LOG_ERROR, "Macro eval error: " + e.message);
-        return m;
-      }
-    });
-  } while (text !== prev);
-  return text;
-}*/
-
 // === Condition evaluation ===
 function JackCheckCondition(expr) {
   try {
     expr = JackApplyMacros(expr);
-    // replace remaining known defines
-    for (let k in state.JackDefsMap) expr = expr.replace(new RegExp("\\b" + k + "\\b", "g"), state.JackDefsMap[k]);
-    // evaluate special function calls in the expression (like P(15%), RND(...), INCLUDES(), REGEX())
+
+    // Evaluate special functions *before* quoting identifiers
     expr = expr.replace(/\b(REGEX|INCLUDES|P|RND|SELECT)\s*\([^)]*\)/g, (m) => JackEvalSpecial(m));
-    return !!eval(expr);
+
+    // Quote bare identifiers safely
+    expr = expr.replace(/\b([A-Za-z_][A-Za-z0-9_:.]*)\b/g, (m) => {
+      if (["true","false","null","undefined"].includes(m)) return m;
+      if (/^(if|else|return|typeof|new|var|let|const|for|while|do|switch|case|break|continue|function)$/.test(m)) return m;
+      if (/^[0-9]/.test(m)) return m;
+      return JSON.stringify(m);
+    });
+
+    return !!eval(JackFixIncompleteComparisons(expr));
   } catch (e) {
-    JackLog(LOG_ERROR, "Cond error: " + e.message);
+    JackLog(LOG_ERROR, "Cond error: " + e.message + " in '" + expr + "'");
     return false;
   }
+}
+
+function JackFixIncompleteComparisons(expr) {
+  expr = expr.trim();
+
+  if (/^(===|!==|==|!=|>=|<=|>|<)/.test(expr)) expr = "null " + expr;
+  if (/(===|!==|==|!=|>=|<=|>|<)$/.test(expr)) expr += " null";
+
+  // Fix accidental double quotes like ""text"" → "text"
+  expr = expr.replace(/""([^"]+)""/g, '"$1"');
+
+  // Fix incomplete comparisons missing a right-hand operand
+  expr = expr.replace(/(===|!==|==|!=|>=|<=|>|<)\s*(?=(&&|\|\||$))/g, '$1 null');
+
+  // Fix incomplete comparisons missing a left-hand operand
+  expr = expr.replace(/(^|&&|\|\|)\s*(===|!==|==|!=|>=|<=|>|<)/g, '$1 null $2');
+
+  return expr;
 }
 
 // === Evaluate value ===
@@ -819,19 +848,141 @@ function JackGetUserDebug() {
 }
 
 // ======================================================
+// === Story Card Management
+// ======================================================
+// === Story Card Management API ===
+// This provides a clean interface for creating, reading, updating, and deleting story cards
+// using the standard AI Dungeon scripting API (storyCards[], addStoryCard(), updateStoryCard(), deleteStoryCard()).
+
+// Helper: find card index by name
+function _findCardIndexByName(name) {
+  if (!Array.isArray(storyCards)) return -1;
+  return storyCards.findIndex(c => c && Array.isArray(c.keys) && c.keys.includes(name));
+}
+
+// Returns true if a story card exists
+function cardExists(name) {
+  return _findCardIndexByName(name) !== -1;
+}
+
+// Returns a simplified card object or null if not found
+function getCard(name) {
+  const index = _findCardIndexByName(name);
+  if (index === -1) return null;
+  const c = storyCards[index];
+  return {
+    id: c.id,
+    index: index,
+    name: name,
+    keys: [...c.keys],
+    entry: c.entry,
+    title: c.title,
+    description: c.description,
+    type: c.type
+  };
+}
+
+// Saves a story card; creates a new one if not existing.
+// Returns true if successful, false if an error occurs.
+function saveCard(card) {
+  try {
+    if (!card || typeof card.entry !== "string" || !Array.isArray(card.keys)) return false;
+
+    let index = _findCardIndexByName(card.name || card.keys[0]);
+    if (index === -1) {
+      // Create new card
+      const newIndex = addStoryCard(
+        card.keys[0],
+        card.entry,
+        card.category || "Uncategorized"
+      );
+      if (newIndex == null) return false;
+      return true;
+    } else {
+      // Update existing card
+      const c = storyCards[index];
+      updateStoryCard(
+        index,
+        card.keys,
+        card.entry,
+        card.type || c.type,
+        card.title || c.title,
+        card.description || c.description
+      );
+      return true;
+    }
+  } catch (e) {
+    console.error("saveCard error:", e);
+    return false;
+  }
+}
+
+// Deletes a story card by name
+function deleteCard(name) {
+  const index = _findCardIndexByName(name);
+  if (index === -1) return false;
+  try {
+    deleteStoryCard(index);
+    return true;
+  } catch (e) {
+    console.error("deleteCard error:", e);
+    return false;
+  }
+}
+
+// ======================================================
 // === Functions to compress/uncompress text
 // ======================================================
 // LZ-based compress/decompress (UTF-16 safe, lossless).
 const LZUTF16 = (function(){
+  // --- ADDED: local base64 helpers (no browser dependency) ---
+  function toBase64(str) {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let output = "";
+    let i = 0;
+    while (i < str.length) {
+      const c1 = str.charCodeAt(i++) & 0xff;
+      const c2 = str.charCodeAt(i++);
+      const c3 = str.charCodeAt(i++);
+      const e1 = c1 >> 2;
+      const e2 = ((c1 & 3) << 4) | (c2 >> 4);
+      const e3 = isNaN(c2) ? 64 : ((c2 & 15) << 2) | (c3 >> 6);
+      const e4 = isNaN(c3) ? 64 : (c3 & 63);
+      output += chars.charAt(e1) + chars.charAt(e2)
+        + (e3 === 64 ? "=" : chars.charAt(e3))
+        + (e4 === 64 ? "=" : chars.charAt(e4));
+    }
+    return output;
+  }
+
+  function fromBase64(input) {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let str = "";
+    input = input.replace(/[^A-Za-z0-9\+\/\=]/g, "");
+    let i = 0;
+    while (i < input.length) {
+      const e1 = chars.indexOf(input.charAt(i++));
+      const e2 = chars.indexOf(input.charAt(i++));
+      const e3 = chars.indexOf(input.charAt(i++));
+      const e4 = chars.indexOf(input.charAt(i++));
+      const c1 = (e1 << 2) | (e2 >> 4);
+      const c2 = ((e2 & 15) << 4) | (e3 >> 2);
+      const c3 = ((e3 & 3) << 6) | e4;
+      str += String.fromCharCode(c1);
+      if (e3 !== 64 && e3 !== -1) str += String.fromCharCode(c2);
+      if (e4 !== 64 && e4 !== -1) str += String.fromCharCode(c3);
+    }
+    return str;
+  }
+  // --- END ADDED ---
+
   function _compress(uncompressed) {
     if (uncompressed == null) return "";
     const dictionary = new Map();
     const data = [];
     let dictSize = 3;
     let w = "";
-    let bits = 0, val = 0;
     const outputChar = (v) => {
-      // emit 16-bit char
       data.push(String.fromCharCode(v));
     };
 
@@ -841,11 +992,8 @@ const LZUTF16 = (function(){
       if (dictionary.has(wc)) {
         w = wc;
       } else {
-        // output code for w
         const code = (w === "") ? uncompressed.charCodeAt(i) : dictionary.get(w);
-        // emit code as 16-bit units: we will normalize codes >= 0
         outputChar(code);
-        // add wc to dictionary
         dictionary.set(wc, dictSize++);
         w = c;
       }
@@ -856,30 +1004,31 @@ const LZUTF16 = (function(){
       outputChar(code);
     }
 
-    // join into string - this is raw 16-bit code units stream; we still need to wrap in a small header
-    return String.fromCharCode(0) + data.join("");
+    // --- MODIFIED: safe Base64 encoding ---
+    const uint16 = new Uint16Array(data.map(ch => ch.charCodeAt(0)));
+    let binary = "";
+    for (let i = 0; i < uint16.length; i++) {
+      binary += String.fromCharCode(uint16[i]);
+    }
+    return "LZ:" + toBase64(binary);
+    // --- END MODIFIED ---
   }
 
   function _decompress(compressed) {
     if (compressed == null || compressed.length === 0) return "";
-    // first char reserved header (we used 0)
-    if (compressed.charCodeAt(0) !== 0) {
-      // not our format, return as-is
-      return compressed;
-    }
 
-    const data = [];
+    // --- MODIFIED: safe Base64 decoding ---
+    if (!compressed.startsWith("LZ:")) return compressed;
+    const binary = fromBase64(compressed.slice(3));
+    const data = new Uint16Array(binary.length);
+    for (let i = 0; i < binary.length; i++) data[i] = binary.charCodeAt(i);
+    // --- END MODIFIED ---
+
     const dictionary = [];
     let dictSize = 3;
-    let i = 1;
-    // read sequential 16-bit char codes
-    while (i < compressed.length) {
-      data.push(compressed.charCodeAt(i++));
-    }
 
     if (data.length === 0) return "";
 
-    // first code: if < 256 treat as char code
     let w = String.fromCharCode(data[0]);
     let result = w;
     let entry;
@@ -893,18 +1042,14 @@ const LZUTF16 = (function(){
         throw new Error("Bad compressed code: " + code);
       }
       result += entry;
-      // add w+entry[0] to dictionary
       dictionary[dictSize++] = w + entry.charAt(0);
       w = entry;
     }
     return result;
   }
 
-  // Wrapper that tries to improve compression ratio by encoding frequent codepoints
-  // (This is a simple and robust approach for AI Dungeon texts.)
   function compress(input) {
     if (input == null) return "";
-    // convert input to a canonical UTF-16 string (JS string is UTF-16 already)
     return _compress(input);
   }
 
@@ -915,10 +1060,6 @@ const LZUTF16 = (function(){
 
   return { compress, decompress };
 })();
-
-// Example usage:
-// const compressed = LZUTF16.compress("Hello, 世界. Some long text ...");
-// const original = LZUTF16.decompress(compressed);
 
 if (typeof module !== "undefined" && module.exports) {
   module.exports = LZUTF16;
@@ -933,6 +1074,30 @@ function TOLZ(text) {
 function LZ(compressed) {
   if (!compressed) return "";
   return LZUTF16.decompress(compressed);
+}
+// ======================================================
+// Store data in Story Card with compression
+// Saves text into a story card with given name.
+// Always overwrites existing card data or creates new one if missing.
+function saveTextToSC(card_name, text) {
+  text = TOLZ(text);
+  const card = {
+    name: card_name,
+    keys: ["JackText"],
+    entry: text,
+    type: "Data",
+    title: card_name,
+    description: "",
+    category: "Data"
+  };
+  return saveCard(card);
+}
+
+// Returns text content from a story card saved by saveTextToSC().
+// Returns "" if card doesn't exist.
+function getTextFromSC(card_name) {
+  const card = getCard(card_name);
+  return card ? LZ(card.entry) : "";
 }
 
 // ======================================================
@@ -1231,7 +1396,7 @@ function JackAiQuestionsDump() {
 // ======================================================
 function JackSplitContext(text) {
   const mainHeaders = ["World Lore", "Story Summary", "Memories", "Recent Story"];
-  const bracketHeaders = ["Author's note", "Guidance", "Scene"];
+  const bracketHeader = "Author's note";
   const result = {};
   let currentHeader = "Plot Essentials";
   result[currentHeader] = "";
@@ -1250,30 +1415,33 @@ function JackSplitContext(text) {
     }
   }
 
-  // Process Recent Story only if it exists
   if (result["Recent Story"]) {
-    let recent = result["Recent Story"];
-    const lines = recent.split(/\r?\n/);
-    const userInput = [];
-    const nonUser = [];
+    let remainder = result["Recent Story"];
 
-    for (const line of lines) {
-      if (/^\s*>\s*/.test(line)) userInput.push(line.replace(/^\s*>\s*/, ""));
-      else nonUser.push(line);
+    // Use stored author's note text if available
+    const storedNote = (typeof state !== "undefined" && state.memory && state.memory.authorsNote)
+      ? state.memory.authorsNote.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      : "";
+
+    // Build non-greedy match; no spaces allowed before the colon
+    const contentPattern = storedNote ? `[\\s\\S]*?${storedNote}[\\s\\S]*?` : `[\\s\\S]*?`;
+    const bracketPattern = new RegExp(`\\[${bracketHeader}:(${contentPattern})\\]`, "m");
+
+    const match = bracketPattern.exec(remainder);
+    if (match) {
+      const before = remainder.slice(0, match.index);
+      result["Recent Story"] = before.trim();
+
+      const noteContent = match[1].trim();
+      result[`[${bracketHeader}]`] = noteContent;
+
+      // Store note globally for future pattern refinement
+      //if (typeof state !== "undefined" && state.memory) state.memory.authorsNote = noteContent;
+
+      const after = remainder.slice(match.index + match[0].length);
+      if (after.trim()) result["AfterNote"] = after.trim();
+      else if (!result["AfterNote"]) result["AfterNote"] = "";
     }
-    if (userInput.length) result["User Input"] = userInput.join("\n");
-
-    let remainder = nonUser.join("\n");
-    const bracketPattern = new RegExp(`\\[(${bracketHeaders.join("|")}):([\\s\\S]*)\\]`, "gm");
-
-    let match;
-    while ((match = bracketPattern.exec(remainder)) !== null) {
-      const key = `[${match[1]}]`;
-      result[key] = (result[key] || "") + match[2].trim();
-      remainder = remainder.replace(match[0], "").trim();
-    }
-
-    result["Recent Story"] = remainder.trim();
   }
 
   return result;
@@ -1284,26 +1452,28 @@ function JackMergeContext(sections) {
   const bracketHeaders = ["Author's note", "Guidance", "Scene"];
   let output = "";
 
-  if (sections["Plot Essentials"]?.trim()) output += sections["Plot Essentials"].trim() + "\n\n";
+  if (sections["Plot Essentials"]?.trim()) output += sections["Plot Essentials"].trim() + "\n";
 
   for (const header of mainOrder) {
-    if (!sections[header]) continue;
-    output += `${header}:\n${sections[header].trim()}\n\n`;
+    if (!(header in sections)) continue;
+
+    const body = sections[header] ?? "";
+    output += `\n${header}:\n${body.trim()}\n`;
 
     if (header === "Recent Story") {
       for (const b of bracketHeaders) {
         const key = `[${b}]`;
-        if (sections[key]?.trim()) output += `[${b}: ${sections[key].trim()}]\n\n`;
+        if (sections[key]?.trim()) output += `[${b}: ${sections[key].trim()}]\n`;
       }
 
-      if (sections["User Input"]?.trim())
-        output += sections["User Input"]
-          .split(/\r?\n/)
-          .map(l => `> ${l}`)
-          .join("\n") + "\n\n";
+      if (sections["AfterNote"] !== undefined && sections["AfterNote"] !== null && sections["AfterNote"] !== "") {
+        output += sections["AfterNote"];
+          //.split(/\r?\n/)
+          //.map(l => `> ${l}`)
+          //.join("\n") + "\n";
+      }
     }
   }
-
   return output.trim();
 }
 
@@ -1327,6 +1497,33 @@ function JackReduceTextSize(text, max) {
   if (cutPos === 0) cutPos = excess;
 
   return text.slice(cutPos).trimStart();
+}
+
+// Parses text for #LZ_text(CardName)# and #LZ_begin(cardName)# ... #LZ_end# markers.
+// Replaces #LZ_text(CardName)# with story card content if found, otherwise logs an error and removes it.
+// Extracts text inside #LZ_begin(cardName)# ... #LZ_end# blocks, saves it to that card, and removes the block.
+function lzParser(text) {
+  if (typeof text !== "string") return "";
+
+  // Replace all #LZ_text(CardName)# markers
+  text = text.replace(/#LZ_text\(([^)]+)\)#/g, (match, cardName) => {
+    const content = getTextFromSC(cardName.trim());
+    if (content === "") {
+      JackLog(LOG_ERROR, `Story card "${cardName}" not found for LZ_text.`);
+      return "";
+    }
+    return content;
+  });
+
+  // Process all #LZ_begin(cardName)# ... #LZ_end# blocks
+  const blockRegex = /#LZ_begin\(([^)]+)\)#([\s\S]*?)#LZ_end#/g;
+  text = text.replace(blockRegex, (match, cardName, blockContent) => {
+    const name = cardName.trim();
+    saveTextToSC(name, blockContent);
+    return "";
+  });
+
+  return text;
 }
 
 // ======================================================
@@ -1446,6 +1643,7 @@ function JackDebugStateSize(sysOut) {
 
   sysOut += `\nJackDefsMap: ${defsCount} vars, approx ${(defsSize / 1024).toFixed(1)} KB memory`;
   sysOut += `\nState: ${stateCount} vars, approx ${(stateSize / 1024).toFixed(1)} KB memory`;
+  sysOut += `\nMax Context limit: ${state.JackMaxContextSize} char)`;
   return sysOut;
 }
 
@@ -1526,7 +1724,7 @@ function JackOutputProcess(text) {
   let sysOut = "";
 
   if (state.debugOutput) {
-    sysOut += "\ndebugOutput:\n" + state.debugOutput + "\n";
+    sysOut += state.debugOutput;
   }
 
   let dbg = JackGetUserDebug();
@@ -1537,7 +1735,7 @@ function JackOutputProcess(text) {
     sysOut += JackAiQuestionsDump();
   }
   if (state.verboseLevel >= LOG_VAR) {
-    sysOut += "\nUser Variables:\n" + JackDumpDefs(state.JackDefsMap) + "\n";
+    sysOut += "User Variables:\n" + JackDumpDefs(state.JackDefsMap) + "\n";
   }
   if (state.verboseLevel >= LOG_VERSION) {
     sysOut += "\nJP-Version: " + VERSION;
@@ -1556,4 +1754,228 @@ function JackOutputProcess(text) {
   delete state.JackDefsMap.USER_INPUT;
 
   return text;
+}
+
+// ======================================================
+// === Story Status Detectors
+// ======================================================
+/* Location context-data Examples
+Location: Library includes shelves, books, and reading tables. There are librarians, quiet, silence, and dust. Place for studying and reading.
+Location: Lake (or dock) includes water, shore, and boats. Place for fishing and swimming.
+*/
+function JackParseLocationContext(context = "") {
+  const lines = context.split(/\r?\n/);
+  const locs = {};
+
+  for (let line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed.toLowerCase().startsWith("location:")) continue;
+
+    let part = trimmed.slice(9).trim();
+    const nameMatch = part.match(/^([A-Z][A-Za-z0-9_]+|[a-z][a-z0-9_]+)(?:\s*\(([^)]+)\))?/);
+    if (!nameMatch) continue;
+    const name = nameMatch[1];
+    const alts = nameMatch[2]
+      ? nameMatch[2].split(/,|\bor\b/).map(x => x.trim()).filter(x => x && !/room$|place$|area$|space$/i.test(x))
+      : [];
+
+    const lowerSensitive = /^[a-z]/.test(name);
+    const wordVariants = w => lowerSensitive
+      ? [w.toLowerCase(), w.charAt(0).toUpperCase() + w.slice(1)]
+      : [w];
+
+    const includesMatch = part.match(/includes\s+([^\.]+)/i);
+    const strongMatch = part.match(/there\s+(?:is|are)?\s*([^\.]+)/i);
+    const placeForMatch = part.match(/place\s+for\s+([^\.]+)/i);
+
+    const cleanList = s => s.replace(/\b(and|a|the|are|is|that|,)\b/gi, " ")
+      .split(/\s+/)
+      .map(x => x.trim())
+      .filter(Boolean);
+
+    const inside = includesMatch ? cleanList(includesMatch[1]) : [];
+    let strong = [
+      ...(strongMatch ? cleanList(strongMatch[1]) : []),
+      ...(placeForMatch ? cleanList(placeForMatch[1]) : [])
+    ];
+
+    const extendedStrong = [];
+    for (let word of strong) {
+      extendedStrong.push(word);
+      if (word.endsWith("ing") && word.length > 4) {
+        const base = word.replace(/ing$/, "");
+        extendedStrong.push(base, base + "s");
+      }
+    }
+
+    locs[name] = {
+      main: [...wordVariants(name), ...alts.flatMap(wordVariants)].map(x => x.toLowerCase()),
+      inside: inside.map(x => x.toLowerCase()),
+      strong: extendedStrong.map(x => x.toLowerCase())
+    };
+  }
+
+  return locs;
+}
+
+function JackDetectCategory(
+  text,
+  categoryData,
+  threshold = 0.45,
+  protagonists = [],
+  remove_dialog = true,
+  initialLabel = ""
+) {
+  const negationWords = ["not","never","no","isn't","wasn't","won't","didn't","don't","without"];
+  const modalWords = [
+    "would","could","might","should","may","perhaps","maybe",
+    "remember","remembered","recall","recalled","think","thought","imagine","suppose",
+    "dreamed","pretend","wish","if only","used to","hope",
+    "read","reads","memory","talked","says","said","mentioned"
+  ];
+  const enterIndicators = ["enter","arrive","push open","come in","walk in","walk down","step in","step into","step inside","run in","reach"];
+  const exitIndicators = ["leave","left","exit","walk out","step out","go out","run out"];
+
+  if (remove_dialog)
+    text = text.replace(/(['"])(?:(?!\1).)*\1/g, "");
+
+  const matchesLoose = (s, list) => list.some(w => new RegExp("\\b" + w + "\\b", "i").test(s));
+  const hasProtagonist = s => protagonists.length ? matchesLoose(s, protagonists) : true;
+
+  // --- Improved sentence splitting ---
+  const sentences = text
+    .replace(/\r?\n+/g, " ")
+    // protect "a.m." / "p.m." patterns, including variants like "3 a.m.", "3:00 a.m."
+    .replace(/\b(\d{1,2})(:\d{2})?\s*(a\.m\.|p\.m\.)/gi, (_, h, m, ap) =>
+      `${h}${m || ""}§${ap.replace(/\./g, "§")}`
+    )
+    .split(/(?<=[.!?])\s+(?=[A-Z])/)
+    .map(s => s.replace(/§/g, ".").trim())
+    .filter(Boolean);
+
+  const scores = {};
+  for (let label in categoryData) scores[label] = (label === initialLabel) ? 2 : 0;
+
+  for (let s of sentences) {
+    s = " " + s.toLowerCase() + " ";
+    const protagonistPresent = hasProtagonist(s);
+    const negated = negationWords.some(w => s.includes(" " + w + " "));
+    const hypothetical = modalWords.some(w => s.includes(" " + w + " "));
+    const uncertainty = hypothetical || negated;
+    let decay = 0;
+
+    for (let label in categoryData) {
+      const c = categoryData[label];
+      const hitMain = matchesLoose(s, c.main);
+      const hitInside = new RegExp(
+        "\\b(?:in|at|inside)\\b(?:\\s+\\w+){0,2}\\s+\\b(" + c.main.join("|") + ")\\b", "i"
+      ).test(s);
+      const hitStrong = matchesLoose(s, c.strong);
+      const hitObjectInside = matchesLoose(s, c.inside);
+      const entering = matchesLoose(s, enterIndicators);
+      const leaving = matchesLoose(s, exitIndicators);
+      let delta = 0;
+
+      // --- prefix pattern "The [label] is ..." ---
+      const startsWithLabel =
+        new RegExp("^\\s*the\\s+(" + c.main.join("|") + ")\\s+is\\b", "i").test(s);
+
+      // handle leaving
+      if (leaving && !negated) {
+        if (protagonistPresent && hitMain) {
+          if (!hypothetical)
+            scores[label] = 0; //<-A
+          else
+            scores[label] *= 0.7; //<-B
+          continue;
+        } else if (protagonistPresent && !hitObjectInside) {
+          if (!hypothetical)
+            scores[label] *= 0.4; //<-C
+          else
+            scores[label] *= 0.9; //<-E
+          continue;
+        } else if (protagonistPresent && hitObjectInside) {
+          if (!hypothetical)
+            scores[label] *= 1; //<-F
+          else
+            scores[label] *= 1.2; //<-G
+          continue;
+        }
+      }
+
+      // --- Adjusted weights ---
+      if (hitMain && entering && !uncertainty) {
+        if (protagonistPresent)
+          delta += 2.2; // <-H (was 2.5)
+        else
+          delta += 0.8; // <-I (was 0.5)
+      } else if (hitMain && !uncertainty) {
+        delta += 0.3; // <-J (was 0.4)
+      }
+      if (hitStrong) delta += 0.35; // <-K (was 0.5)
+      if (hitInside && !uncertainty) delta += 1.2; //<-L (was 1.0)
+      if (hitObjectInside) delta += 0.25; //<-M (was 0.3)
+      if (startsWithLabel) delta += 0.8; // (N)
+
+      // Calculate decay if strong hit
+      if (delta > (threshold + 1.0)) {
+        decay = Math.max(scores[label] / 4, decay); // changed /5 → /4
+      }
+
+      scores[label] += delta;
+      scores[label] = Math.max(0, scores[label]);
+      if (scores[label] > 2) scores[label] = 2;
+    }
+
+    // apply decay if some locations got hits
+    for (let label in scores) {
+      scores[label] -= decay;
+    }
+  }
+
+  let best = null, bestScore = 0;
+  for (let k in scores)
+    if (scores[k] > bestScore) { best = k; bestScore = scores[k]; }
+
+  const total = Object.values(scores).reduce((a,b)=>a+b,0);
+  const probability = total ? bestScore / total : 0;
+  if (!best || probability < threshold) return { label: "unsure", probability, scores };
+  return { label: best, probability, scores };
+}
+
+// --- Improved time-of-day detector with numeric a.m./p.m. recognition ---
+function JackDetectTimeOfDay(text, threshold = 0.45, initialLabel = "") {
+  const data = {
+    morning: { main: ["morning","sunrise","dawn","daybreak","breakfast"], inside: [], strong: ["wake up","woke up","breakfast","nightgown","from bed"] },
+    midday: { main: ["noon","midday","lunchtime","early afternoon","after lunch"], inside: [], strong: ["lunch","sun shine"] },
+    evening: { main: ["evening","sunset","dusk","twilight","dinner","late afternoon"], inside: [], strong: ["dinner","getting late"] },
+    night: { main: ["night","midnight","went to bed","asleep","moonlight"], inside: [], strong: ["bed","sleep","sleeping","darkness","moon","stars","nightgown","can't sleep","into bed"] }
+  };
+
+  const exclusions = ["yesterday evening","last evening","tomorrow morning","the night before"];
+  for (let ex of exclusions) text = text.replace(new RegExp(ex, "gi"), "");
+
+  // --- Time numeric detection ---
+  const timeMatch = text.match(/\b(\d{1,2})(?::(\d{2}))?\s*(a\.m\.|p\.m\.)\b/i);
+  if (timeMatch) {
+    const hour = parseInt(timeMatch[1], 10);
+    const period = timeMatch[3].toLowerCase();
+    if (period.startsWith("a")) {
+      if (hour >= 0 && hour <= 5) return ["night", 1.0, {}];
+      return ["morning", 1.0, {}];
+    } else {
+      return ["evening", 1.0, {}];
+    }
+  }
+
+  const result = JackDetectCategory(text, data, threshold, [], false, initialLabel);
+  return [result.label, result.probability, result.scores];
+}
+
+function JackDetectLocation(text, context = "", protagonists = [], threshold = 0.6, initialLabel = "") {
+  const data = JackParseLocationContext(context);
+  if (!Object.keys(data).length) return ["unsure", 0, {}];
+  const result = JackDetectCategory(text, data, threshold, protagonists, true, initialLabel);
+  if (result.probability >= threshold) return [result.label, result.probability, result.scores];
+  return ["unsure", 0, result.scores];
 }
