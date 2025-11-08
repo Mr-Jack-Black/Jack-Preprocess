@@ -16,12 +16,8 @@ function JackCmdCheck(text) {
     // Case insensitive
     let lower = text.toLowerCase();
 
-    // Do not process commands within SYSTEM messages.
-    //lower = lower.replace(/<SYSTEM>[\s\S]*?<\/SYSTEM>/g, '');
-
     if (lower.includes("/debug off")) {
         state.verboseLevel = LOG_SYS_ERROR;
-        //state.lastOutput = state.lastOutput.replace(/<SYSTEM>[\s\S]*?<\/SYSTEM>/g, '').trim();
     } else if (lower.includes("/debug on")) {
         state.verboseLevel = LOG_STORY;
     } else if (lower.includes("/debug deep")) {
@@ -60,10 +56,14 @@ const modifier = (text) => {
     // (#debug-primitive works even without this)
     text = JackCmdCheck(text);
 
+    // Optional: Used for input-modify primitives
+    // Used by #user_success/#user_fail/#user_trusted/#user_sus
+    text = JackAppendSuccessInfo(text);
+    
     // Optional: LewdLeah Auto-Cards
     //text = AutoCards("input", text);
 
-    // Optional: Store input to be available in {INPUT}
+    // Optional: Store input to be available in {USER_INPUT}
     state.lastInput = text;
 
     return {text};
