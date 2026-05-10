@@ -4,10 +4,28 @@
 // Supported commands (case-insensitive):
 //   /debug on          → enable debug mode
 //   /debug off         → disable debug mode
-//   /debug deep        → deep debug mode (a lot)
-//   /debug simple      → "/debug on" alias
+//   /version           → script version info
+//   /memory            → memory usage
 //   /debug KEY=VALUE   → define KEY with VALUE
 //   /debug KEY=null    → undefine KEY
+
+const safeStringify = (value) => {
+    const seen = new WeakSet();
+    return JSON.stringify(
+      value,
+      (key, val) => {
+        if (typeof val === "function") return "[Function]";
+        if (typeof val === "symbol") return val.toString();
+        if (typeof val === "object" && val !== null) {
+          if (seen.has(val)) return "[Circular]";
+          seen.add(val);
+        }
+        return val;
+      },
+      2
+    );
+  };
+
 function JackCmdCheck(text) {
     
     // Avoid executing commands from intro texts.
@@ -22,14 +40,32 @@ function JackCmdCheck(text) {
         state.verboseLevel = LOG_STORY;
     } else if (lower.includes("/debug deep")) {
         state.verboseLevel = LOG_CONTEXT;
-    } else if (lower.includes("/debug simple")) {
+    } else if (lower.includes("/debug var")) {
         state.verboseLevel = LOG_VAR;
     } else if (lower.includes("/log off")) {
         state.verboseLevel = LOG_OFF;
     } else if (lower.includes("/log error")) {
-        state.verboseLevel = LOG_ERROR;
+        state.verboseLevel = LOG_SYS_ERROR;
+    } else if (lower.includes("/log warning")) {
+        state.verboseLevel = LOG_WARNING;
+    } else if (lower.includes("/log story")) {
+        state.verboseLevel = LOG_STORY;
+    } else if (lower.includes("/log var")) {
+        state.verboseLevel = LOG_VAR;
+    } else if (lower.includes("/log ai")) {
+        state.verboseLevel = LOG_AI;
+    } else if (lower.includes("/log command")) {
+        state.verboseLevel = LOG_COMMAND;
+    } else if (lower.includes("/log context")) {
+        state.verboseLevel = LOG_CONTEXT;
     } else if (lower.includes("/version")) {
-        state.verboseLevel = LOG_VERSION;
+        state.debugOutput += "\nJackPreprocess " + VERSION;
+    } else if (lower.includes("/memory")) {
+        state.debugOutput += JackDebugStateSize("");
+        let globalThisOut = "";
+        try { globalThisOut = safeStringify(globalThis); }
+        catch { globalThisOut = String(globalThis); }
+        state.debugOutput += globalThisOut;
     }
 
     // Match generic "/debug key=value"
@@ -57,13 +93,13 @@ const modifier = (text) => {
     text = JackCmdCheck(text);
 
     // Optional: Used for input-modify primitives
-    // Used by #user_success/#user_fail/#user_trusted/#user_sus
+    // Used by #user_success/#user_fail/#user_trusted/#user_suspicious
     text = JackAppendSuccessInfo(text);
-    
+
     // Optional: LewdLeah Auto-Cards
     //text = AutoCards("input", text);
 
-    // Optional: Store input to be available in {USER_INPUT}
+    // Optional: Store input to be available in {INPUT}
     state.lastInput = text;
 
     return {text};
